@@ -34,10 +34,10 @@ PlantGuard UAV v1.0 is an operator-authorized autonomous RGB field-inspection sy
 
 It supports:
 
-- one predefined agricultural field at a time;
+- one predefined agricultural field sector at a time;
 - one programmable drone at a time;
 - a previously saved field boundary;
-- automatic full-field survey planning;
+- automatic planned-inspectable-area survey planning;
 - RGB image capture and geotagging;
 - healthy-versus-unhealthy screening;
 - suspicious-site grouping;
@@ -46,6 +46,8 @@ It supports:
 - disease classification with confidence where image quality is sufficient;
 - automatic return-to-home and landing;
 - farmer-facing results through an application dashboard.
+
+The production v1.0 release is validated for one configured crop or crop family, a limited supported disease taxonomy, and dry daylight operation only.
 
 The system is designed for open agricultural fields. It does not depend on research-grade obstacle avoidance and does not perform crop treatment.
 
@@ -76,75 +78,29 @@ The intended field is:
 - suitable for visual observation by the operator;
 - accessible for later ground-truth inspection where required.
 
-### 3.3 Operating Modes
+### 3.3 Production Operating Mode
 
-PlantGuard UAV v1.0 defines three environmental operating modes.
+PlantGuard UAV v1.0 supports one production environmental mode:
 
-#### Nominal Mode
+```text
+nominal_dry_daylight
+```
 
-Nominal mode is the preferred operating condition.
+Required conditions include dry weather, adequate daylight and visibility, supported wind, stable imaging, no precipitation, and no significant condensation risk.
 
-Typical conditions:
-
-- dry weather;
-- clear or partly cloudy daylight;
-- acceptable visibility;
-- wind within the selected drone's approved limits;
-- no precipitation;
-- stable image exposure;
-- no significant condensation risk.
-
-Nominal mode uses the standard survey altitude, speed, overlap, and battery reserve.
-
-#### Degraded-Visibility Mode
-
-Degraded-visibility mode may be used in light mist or light fog when safety and image-quality requirements continue to pass.
-
-The system may adapt by:
-
-- reducing survey altitude within safe and legal bounds;
-- reducing flight speed;
-- increasing image overlap;
-- shortening survey legs;
-- increasing image-quality checks;
-- increasing battery reserve;
-- reducing the number of planned revisit sites;
-- returning home if visibility or image quality degrades.
-
-Degraded-visibility mode must not be used when required visual line of sight cannot be maintained.
-
-#### Light-Precipitation Mode
-
-Light-precipitation mode may be used only when the complete selected platform is explicitly approved for the encountered precipitation level.
-
-The complete platform includes:
-
-- aircraft;
-- motors and propulsion system;
-- flight controller enclosure;
-- camera;
-- gimbal;
-- companion computer;
-- power electronics;
-- connectors;
-- payload enclosure;
-- storage system.
-
-Light rain is not treated as automatically safe merely because rainfall intensity appears low.
-
-The mission must be blocked when any required component is not weather-rated or manufacturer-approved for the current conditions.
+Fog, mist, rain, precipitation, night operation, and degraded-visibility flight are outside the production v1.0 operating envelope. Detection of those conditions before takeoff blocks the mission; detection in flight causes the Safety Supervisor to select return-home or controlled landing. Supporting an additional environmental mode requires formal product change control, hardware qualification, safety analysis, and new field acceptance evidence.
 
 ## 4. Crop Assumptions
 
 ### 4.1 Software Crop Scope
 
-The software architecture shall remain capable of supporting multiple crops.
+The software architecture shall remain extensible to multiple crops.
 
 The field, mission, dataset, model, and reporting schemas shall not be hard-coded to one crop.
 
 ### 4.2 First Real-World Validation Scope
 
-The first field-validated release shall focus on one crop or one crop family.
+The production v1.0 release shall be qualified for one configured crop or crop family and a limited, versioned disease taxonomy.
 
 The crop shall be selected according to:
 
@@ -173,7 +129,7 @@ Specific disease classification is performed using lower-altitude revisit imager
 
 ### 4.4 Individual-Plant Identification
 
-The complete field shall be surveyed.
+The planned inspectable area of the selected field sector shall be surveyed.
 
 However, v1.0 shall claim individual-plant identification only when:
 
@@ -318,7 +274,7 @@ operator judgement
 
 The nominal survey is intended to:
 
-- cover the full field;
+- cover the planned inspectable area;
 - provide repeated visual coverage;
 - collect sufficient imagery for health screening;
 - support approximate geospatial localization;
@@ -351,7 +307,7 @@ Front overlap: 75%
 Side overlap: 65%
 ```
 
-Overlap may be increased in degraded conditions.
+Overlap may be changed only through validated mission configuration and route revalidation.
 
 The overlap policy supports:
 
@@ -389,7 +345,7 @@ landing
 required reserve
 ```
 
-Large fields may require multiple independent flights.
+The v1.0 mission boundary is one field sector that fits the validated survey, same-flight decision, revisit, return, landing, and reserve envelope. A larger field must be divided into separately approved sectors and independent missions. Automatic multi-flight stitching is excluded from v1.0.
 
 ### 7.5 Provisional Wind Envelope
 
@@ -419,7 +375,7 @@ PX4 or the selected flight stack may provide wind warnings or failsafe behavior,
 
 ### 8.1 Daylight
 
-V1.0 is intended primarily for daylight operation.
+V1.0 is restricted to daylight operation with adequate and stable illumination.
 
 The system should avoid:
 
@@ -430,39 +386,13 @@ The system should avoid:
 - heavy haze that removes useful image contrast;
 - conditions in which the operator cannot supervise the drone.
 
-### 8.2 Rain
+### 8.2 Rain and Precipitation
 
-Light rain may be supported only in Light-Precipitation Mode.
-
-The mission must be blocked when:
-
-- the selected aircraft is not approved for rain;
-- the camera or gimbal is not approved for rain;
-- the companion computer or payload enclosure is not protected;
-- moisture can reach exposed connectors;
-- water droplets prevent useful image capture;
-- precipitation exceeds the configured limit;
-- manufacturer guidance prohibits operation;
-- the operator cannot maintain safe control.
-
-Reducing altitude does not make a non-weather-rated aircraft safe in rain.
+Rain and precipitation are unsupported in production v1.0. Any detected precipitation before takeoff is a hard blocker. Any detected precipitation in flight requires a conservative return-home or controlled-landing decision. Reducing altitude, speed, or route length does not make precipitation operation supported.
 
 ### 8.3 Fog and Mist
 
-Light mist or light fog may be supported through Degraded-Visibility Mode.
-
-The system must verify that:
-
-- required visual line of sight is maintained;
-- the route remains visibly and operationally clear;
-- known obstacles remain safely separated;
-- image contrast is adequate;
-- lens condensation is absent or controlled;
-- GPS and flight-controller health remain acceptable;
-- the selected hardware permits operation;
-- return-to-home can be completed safely.
-
-The mission must be blocked or terminated when fog prevents safe supervision or useful imaging.
+Fog and mist are unsupported in production v1.0 because they can invalidate visual supervision, obstacle awareness, and image-quality assumptions. Their presence blocks mission start or triggers return-home or controlled landing.
 
 ### 8.4 Condensation
 
@@ -483,7 +413,7 @@ When condensation is detected:
 - the mission shall be delayed or blocked;
 - the system shall not assume that lower altitude will correct the issue.
 
-### 8.5 Precipitation and Visibility Monitoring
+### 8.5 Environmental Monitoring
 
 Weather acceptance is not a one-time preflight decision.
 
@@ -494,76 +424,41 @@ During the mission, the system should monitor available indicators such as:
 - camera image quality;
 - GPS health;
 - vehicle stability;
-- precipitation sensor input when available;
+- precipitation indication when available;
 - visibility-related operator input;
 - repeated image rejection;
 - lens-obscuration detection.
 
-A mission may begin in an approved mode and later transition to return-to-home if conditions degrade.
+A mission may begin only in `nominal_dry_daylight` and shall transition toward return-home or controlled landing if the production envelope is no longer maintained.
 
-## 9. Adaptive Degraded-Weather Behavior
+## 9. Runtime Environmental Degradation Response
 
-When degraded-weather operation is approved, the system may modify the mission conservatively.
+Environmental degradation never expands the approved operating envelope. When daylight, visibility, wind, dryness, image quality, or operator supervision leaves the qualified range:
 
-### 9.1 Allowed Adaptations
+1. no new survey or revisit work is started;
+2. the condition and available evidence are recorded;
+3. the Safety Supervisor chooses return-home or controlled landing;
+4. PX4 native failsafes and manual control remain authoritative;
+5. partial mission evidence and uninspected regions remain visible.
 
-Possible adaptations include:
+Mission parameters shall not be modified merely to continue unsupported weather operation.
 
-- reducing survey altitude;
-- reducing flight speed;
-- increasing front overlap;
-- increasing side overlap;
-- shortening flight legs;
-- reducing revisit-target count;
-- increasing battery reserve;
-- performing more frequent image-quality checks;
-- scheduling more capture attempts per location;
-- aborting low-priority revisits;
-- splitting the field into multiple flights.
+## 10. Provisional Production Operating Envelope
 
-### 9.2 Altitude Reduction Rules
+| Area | Production v1.0 envelope |
+|---|---|
+| Weather | Dry; no precipitation |
+| Lighting | Daylight with adequate, stable illumination |
+| Visibility | Clear, adequate for VLOS and useful imaging |
+| Wind | Within the configured limit and the selected platform's stricter limit |
+| Survey altitude | 20–30 m AGL provisional |
+| Survey speed | 2–4 m/s provisional |
+| Image overlap | 75% front / 65% side provisional |
+| Battery reserve | At least 30% provisional |
+| Mission continuation | Only while every qualified condition remains satisfied |
+| Envelope violation | Block start or return/land safely |
 
-Reducing altitude is allowed only when:
-
-- obstacle clearance remains valid;
-- field geometry remains safe;
-- the route stays within approved bounds;
-- visual line of sight is maintained;
-- battery impact is recalculated;
-- camera coverage remains sufficient;
-- local and manufacturer limits are respected.
-
-Lower altitude is an adaptive option, not a guarantee of safety or diagnostic accuracy.
-
-### 9.3 Degraded-Weather Mission Rejection
-
-The mission must still be rejected when adaptation cannot satisfy:
-
-- visual line-of-sight requirements;
-- obstacle clearance;
-- hardware weather rating;
-- image-quality requirements;
-- battery reserve;
-- return-to-home safety;
-- legal constraints;
-- operator confidence.
-
-## 10. Provisional Operating Envelope
-
-| Area | Nominal mode | Degraded-visibility mode | Light-precipitation mode |
-|---|---|---|---|
-| Weather | Dry | Light mist/light fog | Light rain only |
-| Hardware requirement | Standard approved platform | Platform approved for conditions | Entire platform explicitly weather-rated |
-| Visibility | Clear and adequate | Reduced but VLOS maintained | Adequate VLOS required |
-| Survey altitude | 20–30 m provisional | May be reduced safely | May be reduced safely |
-| Survey speed | 2–4 m/s provisional | Reduced | Reduced |
-| Image overlap | 75% front / 65% side | Increased | Increased |
-| Battery reserve | At least 30% | Increased where necessary | Increased where necessary |
-| Image checks | Standard | More frequent | More frequent |
-| Mission continuation | Normal | Conditional | Conditional |
-| Automatic return | Safety-triggered | Earlier threshold | Earlier threshold |
-
-No degraded-weather mode is guaranteed until actual hardware is selected, tested, and approved.
+All numerical values remain provisional until the exact platform, camera, crop, field sector, and applicable operating limits are qualified.
 
 ## 11. Mission-Start Refusal Conditions
 
@@ -667,7 +562,7 @@ This remains acceptable for intermediate milestones but does not satisfy the fin
 
 ### 13.3 Companion-Computer Processing
 
-A later v1.0 stage may place lightweight screening and mission logic on a companion computer.
+Ground-station-first is the default production topology. A companion computer is promoted into the v1.0 deployment only if measured image-transfer and inference timing cannot produce a safe same-flight revisit decision within the validated energy budget.
 
 Full disease classification may still occur on:
 
@@ -675,7 +570,7 @@ Full disease classification may still occur on:
 - a ground station;
 - a hybrid system.
 
-The product requirement is correct autonomous behavior, not that every model must execute onboard.
+The product requirement is correct autonomous behavior, not that every model must execute onboard. Post-flight-only processing does not satisfy the mandatory same-flight revisit workflow. If neither the ground path nor a qualified companion path passes the timing gate, production release is blocked.
 
 ## 14. Included in Version 1.0
 
@@ -684,6 +579,7 @@ Version 1.0 includes:
 - ready-made programmable drone;
 - RGB camera;
 - one field and one drone at a time;
+- one field sector per mission;
 - predefined field boundary;
 - operator-approved takeoff;
 - automatic survey;
@@ -698,9 +594,7 @@ Version 1.0 includes:
 - farmer dashboard;
 - field map;
 - final report;
-- nominal weather mode;
-- conditional degraded-visibility mode;
-- conditional light-precipitation mode when the selected hardware permits it;
+- nominal dry-daylight operating mode;
 - manual takeover;
 - abort;
 - return-to-home.
@@ -713,6 +607,9 @@ Version 1.0 excludes:
 - custom motors;
 - custom ESCs;
 - custom flight controller;
+- user-defined priority zones, guided routes, and custom route drafts;
+- automatic multi-flight stitching;
+- fog, mist, rain, precipitation, and degraded-visibility operation;
 - custom low-level stabilization;
 - crop spraying;
 - treatment recommendations;
@@ -754,7 +651,7 @@ Possible future extensions include:
 
 ## 17. Known Assumptions and Unresolved Decisions
 
-The following remain intentionally unresolved until later project weeks:
+The following remain intentionally unresolved until their applicable deployment-readiness gates:
 
 - final crop used for first field validation;
 - final drone model;
@@ -784,15 +681,14 @@ The system scope is considered satisfied when:
 3. field and obstacle assumptions are explicit;
 4. nominal survey and revisit parameters are defined provisionally;
 5. battery reserve policy is defined;
-6. weather modes are defined;
-7. light rain is allowed only with approved weather-rated hardware;
-8. fog or mist is allowed only when VLOS, image quality, and route safety remain acceptable;
-9. adaptive altitude reduction is supported but not treated as a universal solution;
-10. mission-start refusal conditions are explicit;
-11. runtime abort and return conditions are explicit;
-12. v1.0 inclusions and exclusions are explicit;
-13. unresolved hardware-dependent limits are identified;
-14. operator supervision and manual intervention remain mandatory.
+6. the dry-daylight production envelope is defined;
+7. unsupported precipitation and degraded visibility block start or trigger safe return/landing;
+8. mission-start refusal conditions are explicit;
+9. runtime abort and return conditions are explicit;
+10. one-sector mission and coverage semantics are explicit;
+11. v1.0 inclusions and exclusions are explicit;
+12. unresolved hardware-dependent limits are identified;
+13. operator supervision and manual intervention remain mandatory.
 
 ## 19. References and Safety Basis
 
@@ -810,8 +706,6 @@ The selected drone's official operating manual and current local regulations sha
 
 PlantGuard UAV v1.0 operates on one predefined open agricultural field at a time using one operator-authorized programmable RGB drone.
 
-The preferred operating condition is dry daylight weather. Light mist, light fog, and light rain may be supported only through explicitly gated degraded-weather modes.
+The supported production condition is dry daylight weather with adequate visibility and wind inside the qualified limit. Fog, mist, rain, precipitation, night operation, and degraded-visibility operation are excluded from v1.0.
 
-In reduced visibility, the system may fly lower, slower, with greater image overlap and a larger battery reserve. These adaptations are permitted only when visual line of sight, obstacle clearance, hardware weather rating, image quality, legal limits, and safe return remain satisfied.
-
-The system shall refuse or terminate missions when these conditions cannot be maintained.
+The system shall refuse mission start or return/land safely when the qualified operating conditions cannot be maintained.

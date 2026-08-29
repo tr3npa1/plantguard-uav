@@ -1,0 +1,28 @@
+PlantGuard UAV database migrations
+==================================
+
+Alembic is the only production schema-management path. Application startup must
+not call ``Base.metadata.create_all()``.
+
+The migration environment reads an explicitly injected ``sqlalchemy.url`` first.
+This is used by isolated tests and administrative tooling. When no URL is
+injected, it loads the validated PlantGuard settings and unwraps the database URL
+only when creating the migration engine. The URL is never written to logs.
+
+Common commands, run from the repository root after installing the persistence
+dependencies:
+
+    alembic upgrade head
+    alembic current
+    alembic downgrade -1
+    alembic upgrade head --sql
+
+Create future revisions with:
+
+    alembic revision --autogenerate -m "describe the schema change"
+
+Always review generated revisions before applying them. Back up production data
+before destructive migrations. The first revision remains an intentionally empty
+baseline; later revisions build the application schema from that stable starting
+point. The current schema includes the saved-field selection projection and must
+continue to evolve only through reviewed Alembic revisions.

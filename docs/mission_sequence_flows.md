@@ -108,27 +108,40 @@ Whenever a flow fails:
 - no prediction is invented;
 - physical flight is not automatically resumed.
 
-## 3. Canonical Mission States
+## 3. Canonical State Dimensions and Flow Notation
+
+Authoritative workflow state:
 
 ```text
-idle
-preflight
+created
+preparing
 awaiting_operator_approval
-takeoff
-survey
-initial_analysis
-revisit_planning
-revisit
-final_classification
-return_to_home
-landing
-report_generation
+ready
+active
+post_flight_processing
+report_ready
 complete
 aborted
 failed
 ```
 
-Only the Mission Orchestrator changes authoritative application mission state.
+Mission activity:
+
+```text
+configuration
+technical_preflight
+takeoff
+survey
+same_flight_decision
+revisit
+return_home
+landing
+none
+```
+
+Vehicle operational state and processing-job state are separate dimensions defined by the data and interface contracts. Only the Mission Orchestrator changes workflow state; PX4/Vehicle Adapter reports vehicle state; the worker owns job state.
+
+For compactness, later flow blocks may use activity aliases such as `preflight`, `takeoff`, `survey`, `initial_analysis`, `revisit_planning`, `revisit`, `final_classification`, `return_to_home`, `landing`, and `report_generation`. These aliases are not additional workflow-state enum values. Processing aliases may overlap vehicle return or landing.
 
 ## 4. Canonical Final Site Statuses
 
@@ -142,15 +155,18 @@ manual_inspection_recommended
 revisit_not_completed
 ```
 
+`revisit_capture_failed` is a reason code attached to `revisit_not_completed`, not an additional final status. Manual-inspection and uncertainty outcomes remain visible but do not count as automatic site resolution.
+
 ## 5. Normal End-to-End Mission Overview
 
 ```text
 Farmer selects field
 → mission is created
-→ farmer submits route intent
+→ farmer confirms automatic coverage and exclusions
 → Survey Planner generates candidate route
-→ Safety Supervisor validates route and preflight
+→ Safety Supervisor validates route and technical preflight
 → farmer approves takeoff
+→ Safety Supervisor validates final takeoff authorization
 → PX4 takes off and executes survey
 → camera captures images
 → images are validated
@@ -341,26 +357,16 @@ preflight
 - Mission Data Manager;
 - Observability and Event Logger.
 
-### Supported Modes
+### Supported Mode
 
 ```text
 automatic_coverage
-guided_automatic
-expert_custom
 ```
 
 ### Sequence
 
-1. Farmer selects a route mode.
-2. Farmer may define:
-   - priority zones;
-   - exclusion zones;
-   - preferred sweep direction;
-   - denser coverage areas;
-   - permitted altitude preference;
-   - speed preference;
-   - overlap preference;
-   - custom route draft.
+1. Farmer confirms automatic coverage for the selected field sector.
+2. Farmer may define approved exclusion zones.
 3. Dashboard validates basic geometry for immediate user feedback.
 4. Dashboard → Mission API: `SubmitRouteIntent`.
 5. Mission API validates payload shape and permissions.
@@ -370,8 +376,7 @@ expert_custom
 9. Survey Planner:
    - loads field boundary;
    - applies exclusion zones;
-   - applies priority zones;
-   - normalizes custom route where applicable;
+   - loads sweep direction, altitude, speed, and overlap from versioned mission configuration;
    - generates candidate waypoints;
    - generates capture points;
    - estimates distance and duration;
@@ -409,7 +414,7 @@ Final field-health percentages will describe only the surveyed region.
 
 ### Failure Behavior
 
-- Malformed route draft: reject with correction details.
+- Unsupported priority, guided, or custom-route input: reject with a v1.0 scope error.
 - Route cannot cover valid field region: reject or return explicit incomplete-coverage warning.
 - Route leaves field/exclusion rules: candidate is rejected before safety approval.
 - Planner failure: mission remains in `preflight`; no executable route exists.
@@ -496,7 +501,7 @@ or
 preflight
 ```
 
-## 10. Flow 5 — Full Preflight
+## 10. Flow 5 — Technical Preflight
 
 ### Initial State
 
@@ -529,8 +534,8 @@ preflight
    - storage capacity/writability;
    - required model readiness;
    - worker readiness;
-   - weather mode;
-   - operator context.
+   - dry-daylight environment checks;
+   - operator-supervision readiness.
 2. Mission Orchestrator → Safety Supervisor: `RunPreflight`.
 3. Safety Supervisor evaluates each check.
 4. Safety Supervisor returns:
@@ -541,7 +546,7 @@ WARNING
 BLOCKED
 ```
 
-5. Preflight result includes:
+5. Technical-preflight result includes:
    - check-level status;
    - warnings;
    - blockers;
@@ -549,9 +554,9 @@ BLOCKED
    - source snapshot references.
 6. Result is persisted.
 7. Mission Orchestrator:
-   - remains in `preflight` for `BLOCKED`;
-   - may remain in `preflight` until warnings are acknowledged;
-   - transitions to `awaiting_operator_approval` for valid PASS/WARNING policy.
+   - keeps workflow `preparing` with activity `technical_preflight` for `BLOCKED`;
+   - may remain `preparing` until warnings are acknowledged;
+   - transitions workflow to `awaiting_operator_approval` for valid PASS/WARNING policy.
 8. Mission Orchestrator ⇒ subscribers: `MissionStateChanged`.
 9. Dashboard displays every check and operator action required.
 
@@ -587,7 +592,7 @@ or remains:
 preflight
 ```
 
-## 11. Flow 6 — Operator Takeoff Approval
+## 11. Flow 6 — Operator Approval and Final Takeoff Authorization
 
 ### Initial State
 
@@ -613,7 +618,7 @@ awaiting_operator_approval
    - exclusions;
    - warnings;
    - battery;
-   - weather mode;
+   - production-environment status;
    - readiness checks.
 2. Operator confirms the takeoff area and VLOS conditions.
 3. Dashboard → Mission API: `ApproveTakeoff`.
@@ -624,17 +629,18 @@ awaiting_operator_approval
    - preflight is not expired;
    - route approval is current;
    - no new blocker exists.
-7. Mission Orchestrator asks Safety Supervisor for final action validation.
-8. Safety Supervisor returns approved or rejected.
-9. Approval is persisted.
-10. Mission Orchestrator transitions:
+7. Approval is persisted with the preflight, route, configuration, actor, and expiry references.
+8. Mission Orchestrator → Safety Supervisor: `ValidateTakeoffAuthorization` using the latest telemetry.
+9. Safety Supervisor returns `AUTHORIZED` or `REJECTED` with reasons.
+10. On authorization, Mission Orchestrator transitions workflow:
 
 ```text
-awaiting_operator_approval → takeoff
+awaiting_operator_approval → ready
 ```
 
 11. Mission Orchestrator ⇒ subscribers:
    - `TakeoffApprovalRecorded`;
+   - `TakeoffAuthorizationValidated`;
    - `MissionStateChanged`.
 
 ### Persistence
@@ -643,6 +649,7 @@ awaiting_operator_approval → takeoff
 [DB] OperatorApproval
 [DB] FinalTakeoffSafetyDecision
 [EVENT] TakeoffApprovalRecorded
+[EVENT] TakeoffAuthorizationValidated
 [EVENT] MissionStateChanged
 ```
 
@@ -652,15 +659,15 @@ Duplicate approval does not create duplicate takeoff commands.
 
 ### Failure Behavior
 
-- Preflight expired: return to `preflight`.
-- New safety blocker: reject and return to `preflight`.
+- Preflight expired: return workflow to `preparing` and rerun technical preflight.
+- New safety blocker: reject, invalidate readiness, and return workflow to `preparing`.
 - Unauthorized actor: reject.
 - Persistence failure: approval is not acted upon.
 
 ### Next State
 
 ```text
-takeoff
+ready
 ```
 
 ## 12. Flow 7 — Takeoff
@@ -668,7 +675,9 @@ takeoff
 ### Initial State
 
 ```text
-takeoff
+workflow: ready
+activity: none
+vehicle: on_ground
 ```
 
 ### Participants
@@ -683,29 +692,30 @@ takeoff
 
 ### Sequence
 
-1. Mission Orchestrator → Vehicle Adapter: `Takeoff`.
-2. Command contains:
+1. Mission Orchestrator verifies the current `TakeoffAuthorizationValidated` record and transitions workflow to `active` with activity `takeoff`.
+2. Mission Orchestrator → Vehicle Adapter: `Takeoff`.
+3. Command contains:
    - mission ID;
    - operator-approval reference;
    - safety-decision reference;
    - target takeoff altitude;
    - idempotency key.
-3. Vehicle Adapter validates command envelope and current PX4 state.
-4. Vehicle Adapter → PX4: takeoff request.
-5. Vehicle Adapter acknowledges command handling.
-6. PX4 arms and begins takeoff.
-7. Vehicle Adapter ⇒ subscribers: `TakeoffStarted`.
-8. Telemetry updates continue.
-9. PX4 reaches the target takeoff condition.
-10. Vehicle Adapter ⇒ subscribers: `TakeoffCompleted`.
-11. Mission Orchestrator persists completion.
-12. Mission Orchestrator transitions:
+4. Vehicle Adapter validates command envelope and current PX4 state.
+5. Vehicle Adapter → PX4: takeoff request.
+6. Vehicle Adapter acknowledges command handling.
+7. PX4 arms and begins takeoff.
+8. Vehicle Adapter ⇒ subscribers: `TakeoffStarted`.
+9. Telemetry updates continue.
+10. PX4 reaches the target takeoff condition.
+11. Vehicle Adapter ⇒ subscribers: `TakeoffCompleted`.
+12. Mission Orchestrator persists completion.
+13. Mission Orchestrator changes activity:
 
 ```text
 takeoff → survey
 ```
 
-13. Mission Orchestrator ⇒ subscribers: `MissionStateChanged`.
+14. Mission Orchestrator ⇒ subscribers: `MissionStateChanged` with workflow still `active`.
 
 ### Persistence
 
@@ -719,7 +729,7 @@ takeoff → survey
 
 ### Failure Behavior
 
-- Command rejected before arming: remain `takeoff` or transition `failed` according to reason.
+- Command rejected before arming: return to `ready` if authorization remains valid, otherwise `preparing`; transition to `failed` only when the mission cannot recover safely.
 - Partial takeoff failure: Safety Supervisor determines hold, land, or return.
 - Duplicate command: Vehicle Adapter returns existing command result.
 - Manual takeover: follow manual-takeover flow.
@@ -1391,7 +1401,7 @@ or
 ### Failure Behavior
 
 - One image fails: retry within policy.
-- Target capture remains unusable: record `revisit_capture_failed`.
+- Target capture remains unusable: set the final outcome to `revisit_not_completed` and record `revisit_capture_failed` as its reason code.
 - Safety degrades: stop remaining targets and return.
 - Partial target evidence is preserved.
 
@@ -1996,7 +2006,17 @@ Pause availability depends on PX4 mode and safety policy.
 
 ### Resume Rule
 
-Resuming physical flight requires current safety revalidation and explicit operator action where policy requires it. It is not a background-job resume.
+Resume is a separate explicit command, not a background-job retry:
+
+1. Operator → Dashboard: resume request.
+2. Dashboard → Mission API: `ResumeMission`.
+3. Mission Orchestrator verifies that the current mission created the confirmed vehicle hold and that no restart, authority loss, link-loss recovery, or manual takeover occurred.
+4. Mission Orchestrator → Safety Supervisor: revalidate link, vehicle health, route, geofence, dry-daylight environment, battery, return, landing, and reserve.
+5. Safety Supervisor returns `AUTHORIZED` or `REJECTED`.
+6. On authorization, Mission Orchestrator records `MissionResumeAuthorized` and directs Vehicle Adapter to continue the remaining approved activity.
+7. On rejection, the hold remains or Safety Supervisor selects return-home or controlled landing.
+
+Resuming after process restart, lost authoritative context, or manual takeover is forbidden. Continued autonomous flight then requires a new recovery mission, technical preflight, and operator approval.
 
 ## 33. Flow 28 — Operator Abort
 
@@ -2360,10 +2380,7 @@ The system must not claim successful inspection when raw evidence could not be p
 ### Sequence
 
 1. Operator or sensor input indicates degraded weather.
-2. Safety Supervisor evaluates current weather mode:
-   - `nominal`;
-   - `degraded_visibility`;
-   - `light_precipitation`.
+2. Safety Supervisor compares conditions with `nominal_dry_daylight`.
 3. Safety Supervisor considers:
    - hardware weather rating;
    - VLOS;
@@ -2372,20 +2389,14 @@ The system must not claim successful inspection when raw evidence could not be p
    - wind;
    - obstacle clearance;
    - battery reserve.
-4. Possible decisions:
-   - continue unchanged;
-   - reduce speed;
-   - lower altitude within safe limits;
-   - increase overlap;
-   - reduce route;
-   - return home.
-5. Any route/parameter change is revalidated.
-6. Persistent quality or safety degradation triggers return.
+4. No new survey or revisit work starts after an environmental-envelope violation.
+5. Safety Supervisor selects return-home or controlled landing; PX4 failsafes and manual control remain authoritative.
+6. Mission parameters are not changed merely to continue unsupported weather operation.
 7. Weather decision is logged.
 
 ### Hard Block
 
-Light precipitation is not allowed unless the complete platform is explicitly rated and all manufacturer, legal, VLOS, and operational checks pass.
+Fog, mist, rain, precipitation, inadequate daylight, and degraded visibility are outside the production v1.0 envelope and cannot be authorized through runtime adaptation.
 
 # Part IX — Restart, Resume, Reconciliation, and Recovery
 
@@ -2623,7 +2634,7 @@ No physical flight continuation is implied.
 24. Safe return/landing outranks analysis completion.
 25. No flow requires cloud connectivity.
 
-# Part XII — Day 5 Frozen Decisions
+# Part XII — Frozen Flow Decisions
 
 ## 57. Frozen Decisions
 
@@ -2665,11 +2676,11 @@ No physical flight continuation is implied.
 36. Partial evidence and unresolved sites remain visible.
 37. Every major flow emits audit events and preserves traceability.
 
-# Part XIII — Day 5 Acceptance Criteria
+# Part XIII — Sequence Acceptance Criteria
 
 ## 58. Acceptance Criteria
 
-Day 5 is complete when:
+The mission-sequence baseline is complete when:
 
 - field selection and mission creation are sequenced;
 - route-intent and survey planning are sequenced;
@@ -2688,7 +2699,7 @@ Day 5 is complete when:
 - no flow bypasses component ownership;
 - partial evidence is preserved;
 - physical flight never automatically resumes;
-- the architecture is ready for Day 6 decisions and traceability.
+- the architecture is ready for end-to-end requirements traceability.
 
 ## 59. Final Sequence Statement
 

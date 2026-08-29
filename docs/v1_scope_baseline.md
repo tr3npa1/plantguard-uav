@@ -14,19 +14,19 @@
 
 ## 1. Document Purpose
 
-This document freezes the PlantGuard UAV v1.0 scope established during Week 1.
+This document freezes the PlantGuard UAV v1.0 product-definition baseline.
 
 It serves as:
 
-- the authoritative index for all Week 1 requirements;
+- the authoritative index for all v1.0 requirements;
 - the document-precedence guide;
 - the canonical terminology reference;
 - the summary of frozen product decisions;
 - the list of deliberately unresolved values;
 - the scope-change control policy;
-- the consistency certificate used before Week 2 architecture design.
+- the consistency certificate used by architecture and implementation reviews.
 
-This document does not replace the detailed Week 1 specifications. It defines how those documents fit together and prevents later implementation from silently changing the agreed product.
+This document does not replace the detailed product, data, safety, and verification specifications. It defines how those documents fit together and prevents implementation from silently changing the agreed product.
 
 ## 2. Scope Baseline Status
 
@@ -50,7 +50,7 @@ decision logic
 safety behavior
 verification requirements
 release gates
-portfolio extensions
+deferred post-v1 capabilities
 explicit exclusions
 ```
 
@@ -86,20 +86,20 @@ Safety behavior always takes precedence over:
 - revisit completion;
 - latency targets;
 - disease classification;
-- portfolio-extension goals.
+- deferred post-v1 capability goals.
 
 The safety policy and native flight-controller failsafes remain authoritative during conflict.
 
 ## 4. Frozen Product Statement
 
-PlantGuard UAV v1.0 is an operator-authorized autonomous RGB field-inspection system for one predefined agricultural field at a time using one programmable drone.
+PlantGuard UAV v1.0 is an operator-authorized autonomous RGB field-inspection system for one predefined agricultural field sector at a time using one programmable drone, one configured crop scope, and dry daylight operation.
 
 The system:
 
 1. loads a saved field;
-2. performs preflight checks;
-3. requires operator approval before takeoff;
-4. surveys the complete field;
+2. performs technical preflight checks;
+3. requires operator approval linked to the current valid preflight snapshot;
+4. surveys the planned inspectable area of one field sector;
 5. captures geotagged RGB imagery;
 6. screens observations as healthy, unhealthy, or uncertain;
 7. groups unhealthy and uncertain observations into suspicious sites;
@@ -121,11 +121,12 @@ The canonical v1.0 workflow is:
 select saved field
 → load field and mission configuration
 → connect one drone
-→ run preflight
+→ run technical preflight
 → show readiness and blockers
 → obtain operator takeoff approval
+→ perform final takeoff validation
 → take off
-→ survey complete field
+→ survey planned inspectable area
 → capture geotagged RGB imagery
 → validate image quality
 → screen healthy / unhealthy / uncertain
@@ -204,6 +205,8 @@ The following terms are authoritative.
 ```text
 field
 field boundary
+field sector
+planned inspectable area
 home location
 takeoff area
 exclusion zone
@@ -240,13 +243,16 @@ manual_inspection_recommended
 revisit_not_completed
 ```
 
+`revisit_capture_failed` is a reason code, not a final site status. It produces `revisit_not_completed` with manual action required. Only `healthy_after_suspicious_survey` and `unhealthy_disease_identified` count as automatically resolved suspicious-site outcomes; uncertain, manual-inspection, and incomplete outcomes remain explicit but do not count as automatic resolution.
+
 ### 8.4 Operational Terms
 
 ```text
-preflight
+technical preflight
 operator approval
 manual takeover
 pause
+resume
 abort
 return-to-home
 controlled landing
@@ -269,49 +275,76 @@ broken crop
 
 Farmer-facing language may use simpler explanations, but internal contracts shall use canonical terminology.
 
-## 9. Canonical Mission States
+## 9. Canonical State Dimensions
 
-The canonical mission states are:
+PlantGuard does not overload one enum with workflow, aircraft, and processing state.
 
-```text
-IDLE
-PREFLIGHT
-AWAITING_OPERATOR_APPROVAL
-TAKEOFF
-SURVEY
-INITIAL_ANALYSIS
-REVISIT_PLANNING
-REVISIT
-FINAL_CLASSIFICATION
-RETURN_TO_HOME
-LANDING
-REPORT_GENERATION
-COMPLETE
-ABORTED
-FAILED
-```
+### 9.1 Mission Workflow State
 
-The canonical serialized values are:
+Owned only by the Mission Orchestrator:
 
 ```text
-idle
-preflight
+created
+preparing
 awaiting_operator_approval
-takeoff
-survey
-initial_analysis
-revisit_planning
-revisit
-final_classification
-return_to_home
-landing
-report_generation
+ready
+active
+post_flight_processing
+report_ready
 complete
 aborted
 failed
 ```
 
-These states form the basis of the Week 4 mission-state implementation.
+### 9.2 Mission Activity
+
+Describes the current mission objective and may change while workflow state remains `active`:
+
+```text
+configuration
+technical_preflight
+takeoff
+survey
+same_flight_decision
+revisit
+return_home
+landing
+none
+```
+
+### 9.3 Vehicle Operational State
+
+Derived from PX4 through the Vehicle Adapter; it is not changed by the Mission Orchestrator:
+
+```text
+unknown
+disconnected
+on_ground
+armed
+taking_off
+in_flight
+holding
+returning_home
+landing
+landed
+manual_control
+```
+
+### 9.4 Processing Job State
+
+Owned by the Background Job Worker and persisted independently:
+
+```text
+queued
+running
+retry_wait
+paused
+succeeded
+failed
+cancelled
+```
+
+Processing may continue while the aircraft is returning or after it lands. No job transition may imply or cause physical-flight resumption.
 
 ## 10. Canonical Survey Decision Logic
 
@@ -436,7 +469,7 @@ revisit_not_completed
 
 ## 12. Canonical Confidence Policy
 
-Exact thresholds are not frozen in Week 1.
+Exact thresholds are not frozen in the product scope baseline.
 
 Thresholds shall be:
 
@@ -465,21 +498,22 @@ No model shall be rewarded for forcing unsupported predictions.
 
 The following rules are frozen.
 
-1. Every takeoff requires operator approval.
-2. Hard blockers cannot be overridden through the dashboard.
-3. Manual takeover immediately supersedes autonomy.
-4. Abort cancels remaining autonomous work and normally returns home.
-5. Return Home cancels remaining survey and revisit work.
-6. Native flight-controller failsafes remain enabled.
-7. PlantGuard shall not disable geofence or safety systems to finish a mission.
-8. Revisit begins only when revisit, return, landing, and reserve are feasible.
-9. Partial mission data is always preserved.
-10. AI or backend failure must not destabilize the aircraft.
-11. Physical flight never automatically resumes after interruption.
-12. A recovery flight requires a new mission, full preflight, and new approval.
-13. Critical battery handling remains owned by the flight controller.
-14. Persistent unsafe weather or image-quality degradation triggers return or safe termination.
-15. Safe aircraft recovery has priority over every product objective.
+1. Technical preflight is evaluated independently from operator approval.
+2. Every takeoff requires current operator approval linked to a valid technical-preflight snapshot.
+3. Hard blockers cannot be overridden through the dashboard.
+4. Manual takeover immediately supersedes autonomy.
+5. Abort cancels remaining autonomous work and normally returns home.
+6. Return Home cancels remaining survey and revisit work.
+7. Native flight-controller failsafes remain enabled.
+8. PlantGuard shall not disable geofence or safety systems to finish a mission.
+9. Revisit begins only when revisit, return, landing, and reserve are feasible.
+10. Partial mission data is always preserved.
+11. AI or backend failure must not destabilize the aircraft.
+12. Physical flight never automatically resumes after interruption.
+13. A recovery flight requires a new mission, full preflight, and new approval.
+14. Critical battery handling remains owned by the flight controller.
+15. Leaving the dry-daylight production envelope triggers refusal, return, or safe landing.
+16. Safe aircraft recovery has priority over every product objective.
 
 ## 14. Canonical Preflight Result Values
 
@@ -501,10 +535,9 @@ The condition is visible to the operator and flight may proceed only when no har
 
 The aircraft remains disarmed.
 
-Hard blockers include:
+Technical-preflight hard blockers include:
 
 ```text
-operator approval missing
 manual takeover unavailable
 return-to-home unavailable
 critical flight-controller fault
@@ -523,17 +556,15 @@ required VLOS unavailable
 operator judges conditions unsafe
 ```
 
-## 15. Canonical Weather Modes
+## 15. Canonical Production Environment
 
-The supported weather modes are:
+The only supported v1.0 environmental mode is:
 
 ```text
-nominal
-degraded_visibility
-light_precipitation
+nominal_dry_daylight
 ```
 
-### 15.1 Nominal Mode
+### 15.1 Required Conditions
 
 ```text
 dry daylight
@@ -545,46 +576,19 @@ standard overlap
 standard reserve
 ```
 
-### 15.2 Degraded-Visibility Mode
-
-May be used for light mist or light fog only when:
-
-- required visual line of sight remains available;
-- obstacle clearance remains reliable;
-- image-quality checks pass;
-- selected hardware permits operation;
-- safe return remains possible.
-
-Possible adaptations:
+### 15.2 Unsupported Conditions
 
 ```text
-lower altitude
-lower speed
-higher overlap
-shorter route legs
-more frequent image checks
-larger battery reserve
-fewer revisit targets
+night operation
+fog or mist
+rain or precipitation
+degraded visibility
+unsupported wind
+inadequate image illumination
+condensation affecting the payload
 ```
 
-### 15.3 Light-Precipitation Mode
-
-May be used only when the entire selected platform is explicitly approved for the encountered precipitation.
-
-The complete platform includes:
-
-```text
-aircraft
-camera
-gimbal
-companion computer
-payload enclosure
-connectors
-power electronics
-storage system
-```
-
-Lowering altitude does not make non-weather-rated hardware safe.
+Unsupported conditions block mission start. If encountered in flight, no new inspection work starts and the system returns home or performs a controlled landing according to the safety policy.
 
 ## 16. Canonical Data-Retention Policy
 
@@ -637,11 +641,11 @@ A final disease result without evidence or model metadata is invalid.
 The following features are mandatory for the core PlantGuard UAV v1.0 release:
 
 ```text
-saved field selection
-one drone and one field at a time
+saved field-sector selection
+one drone and one field sector at a time
 operator-approved takeoff
-preflight validation
-full-field survey
+technical preflight followed by final takeoff authorization
+planned-inspectable-area survey
 geotagged RGB image capture
 image-quality validation
 healthy / unhealthy / uncertain screening
@@ -670,11 +674,15 @@ final mission report
 evaluation evidence
 field validation
 failure-case documentation
+one configured crop or crop family
+limited validated disease taxonomy
+dry daylight operation
+approved exclusion zones
 ```
 
-## 19. Planned Portfolio Extensions
+## 19. Deferred Post-v1 Capabilities
 
-The following are planned as part of the broader PlantGuard UAV portfolio:
+The following capabilities are deferred beyond core v1.0 and tracked through product change control:
 
 ```text
 TensorRT FP16 optimization
@@ -691,6 +699,11 @@ mobile frontend
 historical field analytics
 mission-to-mission comparison
 season-level trend reporting
+priority-zone route customization
+guided route customization
+custom route drafts
+automatic multi-flight stitching
+degraded-weather operation
 ```
 
 These extensions:
@@ -725,14 +738,17 @@ multiple simultaneous drones
 multiple simultaneous fields
 research-grade obstacle avoidance
 unsupported rain operation
+fog or mist operation
+precipitation operation
 all-weather guarantee
 fully unsupervised takeoff
 all 132 PlantGuard diseases from wide aerial imagery
+multiple crop taxonomies in the initial production release
 autonomous treatment actions
 cloud synchronization
 ```
 
-Cloud synchronization is also excluded from the planned portfolio extensions.
+Cloud synchronization is also excluded from the deferred post-v1 capabilities.
 
 ## 21. Frozen Verification Strategy
 
@@ -788,11 +804,11 @@ usability gate
 documentation gate
 ```
 
-Portfolio extensions do not block the core v1.0 tag.
+Deferred post-v1 capabilities do not block the core v1.0 tag.
 
 ## 22. Intentionally Unresolved Values
 
-The following values are deliberately unresolved at Week 1 scope freeze:
+The following values are deliberately unresolved at the current scope freeze:
 
 ```text
 first field-validation crop
@@ -809,7 +825,6 @@ exact revisit speed
 exact front overlap
 exact side overlap
 exact wind thresholds
-exact precipitation threshold
 exact minimum visibility
 exact battery start threshold
 exact battery reserve
@@ -860,7 +875,7 @@ validation result
 approver
 ```
 
-The detailed Week 1 documents shall not need structural rewriting when configuration values are resolved.
+The detailed baseline documents shall not need structural rewriting when configuration values are resolved.
 
 ## 24. Scope-Change Control
 
@@ -901,7 +916,7 @@ Formal review is required for:
 - adding treatment behavior;
 - adding cloud dependency;
 - changing release gates;
-- promoting a portfolio extension into core v1.0.
+- promoting a deferred post-v1 capability into core v1.0.
 
 ### 24.2 Changes Not Requiring Scope Review
 
@@ -935,7 +950,7 @@ rejected
 When a proposed feature is valuable but not required for the frozen user workflow, the default action is:
 
 ```text
-defer to portfolio extension
+defer as post-v1 capability
 ```
 
 ## 25. Contradiction-Resolution Procedure
@@ -955,7 +970,7 @@ No developer shall resolve a product-level contradiction silently in code.
 
 ## 26. Cross-Document Consistency Audit
 
-The Week 1 documents have been reviewed against the following statements.
+The baseline documents have been reviewed against the following statements.
 
 ### 26.1 Product Flow
 
@@ -963,7 +978,7 @@ The Week 1 documents have been reviewed against the following statements.
 - one drone is supported;
 - preflight runs before takeoff;
 - operator approval is mandatory;
-- full-field survey occurs;
+- the planned inspectable area is surveyed and skipped regions are reported;
 - RGB imagery is captured;
 - survey screening is healthy/unhealthy/uncertain;
 - suspicious sites are grouped;
@@ -1059,9 +1074,9 @@ Status:
 consistent
 ```
 
-## 27. Week 1 Deliverables
+## 27. Scope-Baseline Deliverables
 
-The frozen Week 1 documentation set is:
+The frozen scope-baseline documentation set is:
 
 ```text
 docs/product_requirements.md
@@ -1072,9 +1087,9 @@ docs/verification_and_acceptance_plan.md
 docs/v1_scope_baseline.md
 ```
 
-## 28. Week 1 Completion Checklist
+## 28. Scope-Baseline Completion Checklist
 
-Week 1 is complete when:
+The scope baseline is complete when:
 
 - all six documents exist;
 - product behavior is explicit;
@@ -1106,9 +1121,9 @@ git commit -m "Freeze PlantGuard UAV v1.0 product scope"
 
 ## 30. Scope-Freeze Declaration
 
-The PlantGuard UAV v1.0 product scope is frozen at the end of Week 1.
+The PlantGuard UAV v1.0 product scope is frozen by this approved baseline.
 
-Week 2 architecture design shall treat the six Week 1 documents as authoritative inputs.
+Architecture and implementation shall treat the six baseline documents as authoritative inputs.
 
 Future implementation may resolve deferred technical values, but it shall not silently alter:
 
@@ -1122,3 +1137,36 @@ the release gates
 ```
 
 Any such change requires formal scope-change review.
+
+## 31. Approved Production-v1 Decisions
+
+The production baseline additionally freezes these decisions:
+
+1. v1.0 operates one PX4 drone over one predefined field sector per mission.
+2. The planned inspectable area is the sector boundary minus approved exclusions and safety-rejected regions.
+3. Minimum usable coverage is 90% of the planned inspectable area; the target is at least 95%; skipped regions are always reported.
+4. Automatic multi-flight stitching is excluded.
+5. The initial production release supports one configured crop or crop family and a limited versioned disease taxonomy.
+6. Only automatic coverage and exclusion zones are core route inputs; priority zones, guided routes, and custom route drafts are deferred.
+7. Only dry daylight operation is supported.
+8. Technical preflight, operator approval, and final takeoff validation are separate gates.
+9. Workflow, mission activity, vehicle state, and processing-job state are separate dimensions.
+10. Pause is a safety-evaluated hold request; resume is explicit, revalidated, and never automatic after restart or link recovery.
+11. `revisit_capture_failed` is a reason for `revisit_not_completed`, not a final status.
+12. Ground-station-first remains the default topology, but production release is blocked unless the selected topology meets the same-flight image-transfer, inference, revisit-decision, and energy gate. A companion may be formally promoted if required to pass that gate.
+
+## 32. External Readiness Gates
+
+Implementation may proceed with adapters and configuration boundaries, but real-flight release remains blocked until all of the following are resolved with evidence:
+
+```text
+selected drone and PX4 version
+selected camera, mount, and image-transfer method
+ground-station compute and communication link
+field access and selected validation crop
+supported disease taxonomy and ground-truth process
+applicable legal, airspace, registration, and operator requirements
+validated field-sector size and energy envelope
+validated geospatial error and time-synchronization limits
+validated same-flight transfer and inference latency budget
+```

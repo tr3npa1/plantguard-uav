@@ -98,7 +98,7 @@ PlantGuard UAV v1.0 uses the following core entities.
 
 ### 3.1 Field
 
-A saved agricultural area that may be selected for a mission.
+A saved agricultural area containing one or more operator-defined sectors. One mission selects exactly one sector.
 
 Minimum fields:
 
@@ -106,6 +106,8 @@ Minimum fields:
 field_id
 field_name
 boundary
+sector_id
+sector_boundary
 home_location
 crop_type
 exclusion_zones
@@ -115,15 +117,18 @@ revisit_configuration
 
 ### 3.2 Mission
 
-One operator-authorized inspection of one field using one drone.
+One operator-authorized inspection of one field sector using one drone.
 
 Minimum fields:
 
 ```text
 mission_id
 field_id
+sector_id
 drone_id
-mission_status
+workflow_state
+mission_activity
+vehicle_state_snapshot
 started_at
 completed_at
 operator_authorized_at
@@ -143,9 +148,16 @@ mission_id
 capture_stage
 file_path
 captured_at
-latitude
-longitude
-altitude
+captured_monotonic_ns
+longitude_deg
+latitude_deg
+altitude_agl_m
+altitude_amsl_m
+horizontal_uncertainty_m
+vertical_uncertainty_m
+coordinate_reference
+altitude_reference
+time_sync_reference
 vehicle_attitude
 camera_metadata
 quality_status
@@ -198,9 +210,14 @@ mission_id
 site_id
 file_path
 captured_at
-latitude
-longitude
-altitude
+captured_monotonic_ns
+longitude_deg
+latitude_deg
+altitude_agl_m
+altitude_amsl_m
+coordinate_reference
+altitude_reference
+time_sync_reference
 quality_status
 ```
 
@@ -254,18 +271,20 @@ The selected field configuration shall contain:
 
 ```text
 field_id
+sector_id
 field_name
 crop_type
-boundary polygon
+field boundary polygon
+sector boundary polygon
 home or takeoff location
 exclusion zones
-survey altitude
+survey altitude AGL
 survey speed
 front overlap
 side overlap
-revisit altitude
+revisit altitude AGL
 revisit speed
-weather mode
+production environment: nominal_dry_daylight
 battery policy
 ```
 
@@ -277,9 +296,10 @@ The mission system may consume:
 vehicle connection status
 armed state
 flight mode
-latitude
-longitude
-altitude
+longitude_deg
+latitude_deg
+altitude_agl_m
+altitude_amsl_m
 ground speed
 vehicle attitude
 battery percentage
@@ -379,24 +399,65 @@ A mission that is aborted or fails shall still preserve every valid artifact pro
 
 ## 6. Standard Status Values
 
-### 6.1 Mission Status
+### 6.1 Mission State Dimensions
+
+The following dimensions are persisted separately. A processing job may run while the mission activity is `return_home` or `landing`; no job state changes physical flight.
+
+#### Mission Workflow State
 
 ```text
 created
-awaiting_preflight
+preparing
 awaiting_operator_approval
 ready
-surveying
-initial_analysis
-revisit_planning
-revisiting
-final_classification
-returning_home
-landing
-report_generation
-completed
+active
+post_flight_processing
+report_ready
+complete
 aborted
 failed
+```
+
+#### Mission Activity
+
+```text
+configuration
+technical_preflight
+takeoff
+survey
+same_flight_decision
+revisit
+return_home
+landing
+none
+```
+
+#### Vehicle Operational State
+
+```text
+unknown
+disconnected
+on_ground
+armed
+taking_off
+in_flight
+holding
+returning_home
+landing
+landed
+manual_control
+```
+
+#### Processing Job State
+
+```text
+queued
+running
+retry_wait
+paused
+succeeded
+failed
+cancelled
 ```
 
 ### 6.2 Image Quality Status
@@ -448,6 +509,13 @@ health_status_unresolved
 manual_inspection_recommended
 revisit_not_completed
 ```
+
+`revisit_capture_failed` is not a final site status. It is a reason code attached to `revisit_not_completed`.
+
+For production metrics:
+
+- `healthy_after_suspicious_survey` and `unhealthy_disease_identified` count as automatically resolved suspicious-site outcomes;
+- `unhealthy_disease_uncertain`, `health_status_unresolved`, `manual_inspection_recommended`, and `revisit_not_completed` remain explicit outcomes requiring uncertainty or manual-action reporting and do not count as automatic resolution.
 
 ## 7. Survey Screening Contract
 
@@ -1028,8 +1096,10 @@ observation_id
 mission_id
 image_id
 region coordinates
-latitude
-longitude
+longitude_deg
+latitude_deg
+coordinate_reference
+horizontal_uncertainty_m
 health_status
 health_confidence
 quality_status
@@ -1086,6 +1156,20 @@ suspicious sites
 revisit targets
 final site results
 ```
+
+The production geospatial and time contract is:
+
+- persisted GeoJSON uses WGS 84 / EPSG:4326;
+- GeoJSON positions use `[longitude, latitude]` axis order in decimal degrees;
+- metric distance, area, clustering, and coverage calculations use a mission-selected local projected CRS recorded in mission metadata;
+- local projected coordinates use easting/x and northing/y in metres;
+- `altitude_agl_m` is required for flight and capture geometry and records its source;
+- `altitude_amsl_m` may also be retained when available but shall never be substituted silently for AGL;
+- every pose records coordinate reference, altitude reference, vehicle/camera frame identifiers, and available uncertainty;
+- persisted wall-clock timestamps use UTC RFC 3339/ISO 8601;
+- capture correlation also retains a monotonic timestamp and the PX4-to-ground clock-mapping reference;
+- telemetry interpolation tolerance is versioned configuration validated against the selected hardware;
+- an image outside the qualified synchronization or pose-uncertainty limit is rejected for geospatial decisions rather than assigned a guessed position.
 
 ## 18. Data Retention Policy
 
@@ -1147,14 +1231,16 @@ For every final site result, the system shall be able to answer:
 9. Why was the final label returned or withheld?
 10. Why was manual inspection recommended?
 
-## 20. Day 3 Acceptance Criteria
+## 20. Data-Contract Acceptance Criteria
 
-The Day 3 contract is complete when:
+The data and decision contract baseline is complete when:
 
 - all required mission inputs are defined;
 - all required outputs are defined;
 - core entities are defined;
 - status values are standardized;
+- workflow, mission activity, vehicle, and processing-job states are separated;
+- coordinate, altitude, frame, and timestamp conventions are explicit;
 - healthy, unhealthy, and uncertain survey handling is explicit;
 - high-confidence unhealthy observations require revisit;
 - uncertain survey observations require attempted revisit;
@@ -1171,7 +1257,7 @@ The Day 3 contract is complete when:
 
 PlantGuard UAV v1.0 uses a two-stage perception and revisit policy.
 
-During the full-field survey:
+During the planned-inspectable-area survey:
 
 ```text
 high-confidence healthy

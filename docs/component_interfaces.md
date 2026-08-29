@@ -197,6 +197,7 @@ SubmitRouteIntent
 RunPreflight
 ApproveTakeoff
 PauseMission
+ResumeMission
 AbortMission
 ReturnHome
 GetMissionStatus
@@ -504,7 +505,8 @@ Unknown safety-critical enum values are rejected safely. Unknown optional non-sa
 
 | State | Owner |
 |---|---|
-| Application mission state | Mission Orchestrator |
+| Mission workflow state and activity | Mission Orchestrator |
+| Vehicle operational state | PX4 through Vehicle Adapter |
 | Application safety decision | Safety Supervisor |
 | Vehicle connection and telemetry | Vehicle Adapter |
 | Candidate survey route | Survey Planner |
@@ -519,32 +521,73 @@ Unknown safety-critical enum values are rejected safely. Unknown optional non-sa
 | Structured records | Persistence Layer |
 | Artifact relationships | Mission Data Manager |
 | Model contract | Model Registry and Metadata Manager |
-| Job state | Background Job Worker |
+| Processing-job state | Background Job Worker |
 | Audit event | Observability and Event Logger |
 
 No component directly mutates another owner’s state.
 
-## 14. Canonical Mission States
+## 14. Canonical State Dimensions
+
+### Mission Workflow State
 
 ```text
-idle
-preflight
+created
+preparing
 awaiting_operator_approval
-takeoff
-survey
-initial_analysis
-revisit_planning
-revisit
-final_classification
-return_to_home
-landing
-report_generation
+ready
+active
+post_flight_processing
+report_ready
 complete
 aborted
 failed
 ```
 
-Only the Mission Orchestrator owns mission-state transitions.
+Only the Mission Orchestrator owns workflow-state transitions.
+
+### Mission Activity
+
+```text
+configuration
+technical_preflight
+takeoff
+survey
+same_flight_decision
+revisit
+return_home
+landing
+none
+```
+
+### Vehicle Operational State
+
+```text
+unknown
+disconnected
+on_ground
+armed
+taking_off
+in_flight
+holding
+returning_home
+landing
+landed
+manual_control
+```
+
+### Processing Job State
+
+```text
+queued
+running
+retry_wait
+paused
+succeeded
+failed
+cancelled
+```
+
+Vehicle state is derived from PX4 through the Vehicle Adapter. Processing state is owned by the Background Job Worker. Neither may be mutated through `TransitionMissionState`.
 
 ## 15. Canonical Final Site Statuses
 
@@ -557,6 +600,8 @@ health_status_unresolved
 manual_inspection_recommended
 revisit_not_completed
 ```
+
+`revisit_capture_failed` is emitted only as a reason code attached to `revisit_not_completed`. `manual_inspection_recommended`, `health_status_unresolved`, `unhealthy_disease_uncertain`, and `revisit_not_completed` are explicit action-required or unresolved outcomes and do not count as automatically resolved sites.
 
 ## 16. Route-Intent Contracts
 
@@ -571,27 +616,20 @@ Payload:
 ```json
 {
   "field_id": "field_01",
+  "sector_id": "sector_01",
   "mission_id": "mission_01",
-  "mode": "guided_automatic",
-  "priority_zones": [],
-  "exclusion_zones": [],
-  "preferred_sweep_direction_degrees": 90,
-  "coverage_density": "standard",
-  "altitude_preference_m_agl": 25,
-  "speed_preference_mps": 3,
-  "front_overlap_fraction": 0.75,
-  "side_overlap_fraction": 0.65,
-  "custom_route_draft": null
+  "mode": "automatic_coverage",
+  "exclusion_zones": []
 }
 ```
 
-Allowed modes:
+The only allowed v1.0 mode is:
 
 ```text
 automatic_coverage
-guided_automatic
-expert_custom
 ```
+
+Sweep direction, altitude, speed, overlap, and coverage density come from versioned, safety-reviewed mission configuration. Priority zones, guided modes, and custom route drafts are rejected as unsupported v1.0 inputs.
 
 Result: accepted, accepted with warnings, or rejected malformed input.
 
@@ -683,7 +721,7 @@ Sender: Mission Orchestrator.
 
 Receiver: Safety Supervisor.
 
-Input includes mission ID, route ID, vehicle state, camera/model/storage readiness, weather mode, operator context, and configuration ID.
+Input includes mission ID, route ID, vehicle state, camera/model/storage readiness, production-environment checks, operator-supervision readiness, and configuration ID. Missing takeoff approval is not a technical-preflight check.
 
 Result:
 
@@ -721,6 +759,24 @@ The response acknowledges approval handling; takeoff completion is separate.
 
 Records operator approval. It does not mean takeoff began.
 
+### ValidateTakeoffAuthorization Command
+
+Sender: Mission Orchestrator.
+
+Receiver: Safety Supervisor.
+
+Preconditions:
+
+- valid technical-preflight snapshot exists and is not expired;
+- approval is recorded by an authorized actor and references that snapshot;
+- route and configuration versions still match;
+- latest telemetry contains no new blocker;
+- vehicle remains disarmed until validation succeeds.
+
+Result is `AUTHORIZED` or `REJECTED` with structured reasons. Rejection invalidates readiness and returns the workflow to `preparing`; authorization permits transition to `ready` and issuance of one idempotent takeoff command.
+
+Completion event: `TakeoffAuthorizationValidated`.
+
 ## 19. Mission-State Contracts
 
 ### TransitionMissionState Operation
@@ -730,8 +786,8 @@ Only the Mission Orchestrator may perform authoritative state transitions.
 Required data:
 
 - mission ID;
-- previous state;
-- next state;
+- previous workflow state;
+- next workflow state;
 - causation message;
 - reason;
 - timestamp.
@@ -740,7 +796,7 @@ Invalid transitions are rejected.
 
 ### MissionStateChanged Event
 
-Contains previous state, new state, reason, triggering message, active stage, and warnings.
+Contains previous workflow state, new workflow state, reason, triggering message, current mission activity, vehicle-state snapshot reference, and warnings.
 
 ## 20. Vehicle Contracts
 
@@ -773,8 +829,8 @@ RouteUploadFailed
 Preconditions:
 
 - operator approval recorded;
-- safety approval valid;
-- mission state correct;
+- final takeoff authorization valid;
+- workflow state is `ready`;
 - vehicle ready.
 
 Completion events:
@@ -800,6 +856,8 @@ SurveyFailed
 
 ### PauseMission Command
 
+Pause is a request for a safety-evaluated vehicle hold; it is not a guaranteed command and does not change the mission into a resumable background job.
+
 Completion events:
 
 ```text
@@ -808,6 +866,33 @@ VehicleHoldConfirmed
 MissionPaused
 MissionPauseFailed
 ```
+
+If holding would violate link, energy, geofence, weather, or PX4 constraints, the request is rejected or converted by the Safety Supervisor into return-home or controlled landing.
+
+### ResumeMission Command
+
+Sender: Dashboard through Mission API.
+
+Receiver: Mission Orchestrator.
+
+Preconditions:
+
+- the vehicle is in a confirmed hold created by the current mission;
+- the operator explicitly requests resume;
+- link, vehicle, route, geofence, environment, battery, return, landing, and reserve checks pass again;
+- no process restart, authority loss, manual takeover, or link-loss recovery occurred;
+- the remaining approved activity is still valid.
+
+Completion events:
+
+```text
+MissionResumeRequested
+MissionResumeAuthorized
+MissionResumed
+MissionResumeRejected
+```
+
+A process restart, manual takeover, or loss of authoritative mission context makes `ResumeMission` invalid. Continued autonomous flight then requires a new recovery mission, technical preflight, and operator approval.
 
 ### AbortMission Command
 
@@ -849,7 +934,7 @@ LandingFailed
 
 Producer: Vehicle Adapter.
 
-Payload may include timestamp, coordinates, altitude, velocity, heading, battery, GPS health, flight mode, home position, and link quality.
+Payload may include UTC and monotonic timestamps, WGS 84 longitude/latitude, explicit AGL and AMSL altitude fields, coordinate/frame references, uncertainty, velocity, heading, battery, GPS health, flight mode, home position, and link quality. Generic unlabeled `altitude` fields are forbidden.
 
 Consumers: Safety Supervisor, Mission Orchestrator, Camera Manager, telemetry persistence, and Dashboard read model.
 
@@ -888,7 +973,7 @@ A unique logical capture ID prevents duplicate records. A retry creates a new ph
 
 ### ImageCaptured Event
 
-Contains image ID, artifact reference, stage, timestamp, camera metadata, telemetry snapshot, route context, and optional site ID.
+Contains image ID, artifact reference, stage, UTC timestamp, monotonic capture timestamp, camera metadata, synchronized telemetry/pose snapshot, coordinate and altitude references, uncertainty, route context, and optional site ID. Inputs outside the configured synchronization or pose-uncertainty limit are rejected for geospatial decisions.
 
 ### ImageCaptureFailed Event
 
@@ -1257,6 +1342,7 @@ Persistence failure stops new unauditable decisions, attempts safe local bufferi
 | Validate survey plan | Command | Orchestrator | Safety Supervisor | Immediate |
 | Run preflight | Command | Orchestrator | Safety Supervisor | `PreflightCompleted` |
 | Approve takeoff | Command | Dashboard | Orchestrator | Approval recorded |
+| Validate takeoff authorization | Command | Orchestrator | Safety Supervisor | `TakeoffAuthorizationValidated` |
 | Take off | Command | Orchestrator | Vehicle Adapter | `TakeoffCompleted` |
 | Start survey | Command | Orchestrator | Vehicle Adapter | `SurveyCompleted` |
 | Publish telemetry | Event | Vehicle Adapter | Subscribers | Continuous |
@@ -1274,6 +1360,8 @@ Persistence failure stops new unauditable decisions, attempts safe local bufferi
 | Generate map | Job | Orchestrator | Worker/Mapper | Map event |
 | Generate report | Job | Orchestrator | Worker/Reporter | Report event |
 | Abort mission | Command | Dashboard/Safety path | Orchestrator | Abort/return events |
+| Pause mission | Command | Dashboard | Orchestrator | Hold/pause events |
+| Resume held mission | Command | Dashboard | Orchestrator | Resume/rejection events |
 | Resume processing | Command | Operator/System | Worker | Job events |
 | Create recovery mission | Command | Dashboard | Orchestrator | Recovery event |
 
@@ -1293,7 +1381,7 @@ Worker → workflow-state ownership
 Event Logger → operational decision
 ```
 
-## 38. Day 3 Frozen Decisions
+## 38. Frozen Interface Decisions
 
 1. Commands request actions.
 2. Events describe completed or observed facts.
@@ -1321,9 +1409,9 @@ Event Logger → operational decision
 24. Events are immutable; corrections use new events.
 25. Unknown safety-critical contract values are rejected safely.
 
-## 39. Day 3 Acceptance Criteria
+## 39. Interface-Contract Acceptance Criteria
 
-Day 3 is complete when:
+The interface-contract baseline is complete when:
 
 - command, event, query, and job semantics are explicit;
 - synchronous and asynchronous behavior are explicit;

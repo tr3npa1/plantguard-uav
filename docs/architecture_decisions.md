@@ -51,7 +51,7 @@ All decisions in this document are `accepted` unless explicitly stated otherwise
 | ADR-003 | Use ROS 2 selectively |
 | ADR-004 | Operate local-first and offline-capable |
 | ADR-005 | Use a ground-station-first v1.0 topology |
-| ADR-006 | Keep companion-computer deployment optional |
+| ADR-006 | Gate companion-computer deployment on same-flight feasibility |
 | ADR-007 | Separate PX4 native safety from PlantGuard application safety |
 | ADR-008 | Use FastAPI for the mission-facing API |
 | ADR-009 | Use asynchronous workers for long-running processing |
@@ -76,6 +76,8 @@ All decisions in this document are `accepted` unless explicitly stated otherwise
 | ADR-028 | Preserve partial evidence and honest unresolved outcomes |
 | ADR-029 | Use recovery missions rather than reactivating interrupted flights |
 | ADR-030 | Keep cloud and internet connectivity outside the safety path |
+| ADR-031 | Separate workflow, mission activity, vehicle, and job state |
+| ADR-032 | Separate technical preflight, operator approval, and final takeoff authorization |
 
 # ADR-001 — Use a Ready-Made PX4-Capable Drone
 
@@ -85,9 +87,9 @@ Accepted.
 
 ## Context
 
-The project goal is to demonstrate autonomy, ML systems, geospatial reasoning, deployment, and field validation.
+The product goal is to deliver and operate a field-qualified autonomous inspection system with auditable ML, geospatial reasoning, deployment controls, and validation evidence.
 
-Designing a custom airframe, motor system, ESC stack, flight controller, stabilization system, and low-level control stack would consume most of the project schedule and introduce unnecessary safety risk.
+Designing a custom airframe, motor system, ESC stack, flight controller, stabilization system, and low-level control stack would consume substantial delivery capacity and introduce unnecessary safety risk.
 
 ## Decision
 
@@ -99,7 +101,7 @@ PlantGuard UAV v1.0 will use a ready-made programmable drone or compatible platf
 - reduces hardware integration risk;
 - preserves access to mature flight-control and failsafe behavior;
 - supports PX4 SITL before hardware purchase;
-- allows the project to reach real field validation within the 52-week plan;
+- supports an evidence-driven path from integration through field validation and production deployment;
 - improves reproducibility and maintainability.
 
 ## Alternatives Considered
@@ -420,8 +422,8 @@ Mission orchestration, application safety, perception, persistence, mapping, rep
 - stronger compute;
 - simpler model iteration;
 - reduced payload and power demand;
-- no companion hardware required for v1.0;
-- supports post-flight fallback.
+- avoids companion hardware when the ground path meets the qualified same-flight timing and energy gate;
+- preserves post-flight processing as a recovery path, not as a substitute for the mandatory same-flight revisit workflow.
 
 ## Alternatives Considered
 
@@ -436,8 +438,8 @@ Rejected because core operation must be offline.
 ## Consequences
 
 - communication quality affects same-flight analysis;
-- some deployments may process images after landing;
-- onboard optimization remains optional.
+- post-flight processing remains available for recovery and reprocessing;
+- onboard processing is promoted only through the feasibility gate.
 
 ## Risks and Mitigations
 
@@ -447,8 +449,8 @@ Mitigation:
 
 - buffer images;
 - use lower-resolution previews;
-- use companion extension;
-- support post-flight mode.
+- qualify a companion capture/inference path;
+- block production release if no topology meets the same-flight gate.
 
 ## Revisit Conditions
 
@@ -460,7 +462,7 @@ Revisit after field measurements of:
 - battery;
 - companion feasibility.
 
-# ADR-006 — Keep Companion-Computer Deployment Optional
+# ADR-006 — Gate Companion-Computer Deployment on Same-Flight Feasibility
 
 ## Status
 
@@ -468,11 +470,13 @@ Accepted.
 
 ## Decision
 
-The companion computer is a compatible extension, not a v1.0 requirement.
+Ground-station-first is the default topology. Companion deployment is not mandatory when measured transfer, inference, revisit-decision, return, landing, and reserve timing passes on the selected ground path.
+
+If the ground path fails that gate, v1.0 must either qualify a compatible companion path through formal change control or block production release. The same-flight revisit requirement shall not be weakened into post-flight-only processing to avoid the gate.
 
 ## Rationale
 
-- avoids blocking progress on hardware;
+- avoids premature hardware coupling;
 - keeps architecture portable;
 - supports later onboard buffering and inference;
 - preserves ground-station baseline.
@@ -496,9 +500,9 @@ The companion computer is a compatible extension, not a v1.0 requirement.
 - automatic physical-flight resume;
 - cloud synchronization.
 
-## Revisit Conditions
+## Promotion Conditions
 
-Revisit after ground-station-first field testing proves a need for onboard capability.
+Promote companion deployment when controlled measurements show that the ground path cannot produce the approved revisit decision within the validated communication and energy budget. Promotion requires hardware qualification, parity testing, failure analysis, local authentication, and field acceptance evidence.
 
 # ADR-007 — Separate PX4 Native Safety From PlantGuard Application Safety
 
@@ -753,7 +757,10 @@ Rejected due to multi-file packaging and weaker web integration.
 
 ## Consequences
 
-- coordinate reference and units must be explicit;
+- persisted GeoJSON uses WGS 84 / EPSG:4326 and `[longitude, latitude]` axis order;
+- metric calculations use a mission-recorded local projected CRS in metres;
+- AGL and AMSL altitude fields and their sources remain explicit and non-interchangeable;
+- UTC wall-clock, monotonic capture time, and PX4 clock mapping are preserved;
 - very large datasets may require optimized derived formats later.
 
 # ADR-013 — Use ONNX Runtime as the Portable Inference Baseline
@@ -802,7 +809,7 @@ TensorRT FP16/INT8 and native C++ inference are planned performance extensions t
 
 ## Rationale
 
-- adds portfolio depth;
+- provides a qualified performance-optimization path;
 - improves latency and throughput;
 - supports companion deployment;
 - preserves portable baseline.
@@ -878,14 +885,7 @@ Accepted.
 
 ## Decision
 
-The Farmer Dashboard captures:
-
-- automatic coverage choice;
-- priority zones;
-- exclusion zones;
-- preferred direction;
-- denser coverage requests;
-- custom route drafts.
+The v1.0 Farmer Dashboard captures automatic coverage confirmation and approved exclusion zones only. Sweep direction, altitude, speed, overlap, and coverage density come from versioned, safety-reviewed mission configuration.
 
 The Survey Planner converts that intent into a candidate executable route.
 
@@ -899,15 +899,15 @@ Farmer input should be flexible without allowing unsafe direct waypoint control.
 
 Rejected due to safety, validation, coverage, and battery concerns.
 
-### No farmer customization
+### Priority zones, guided routes, and custom route drafts
 
-Rejected because farmers may need to prioritize or exclude regions.
+Deferred beyond v1.0 because they expand authorization, validation, usability, and field-acceptance scope. Exclusion zones remain mandatory.
 
 ## Consequences
 
-- route intent requires a versioned contract;
+- route intent remains a minimal versioned contract;
 - skipped coverage must be disclosed;
-- custom drafts require normalization and safety validation.
+- unsupported customization is rejected explicitly.
 
 # ADR-018 — Separate Planning, Safety Approval, and Route Execution
 
@@ -1221,6 +1221,68 @@ No flight action, preflight decision, failsafe, return-home, manual takeover, or
 - safety must remain local;
 - cloud outages must not affect flight.
 
+# ADR-031 — Separate Workflow, Mission Activity, Vehicle, and Job State
+
+## Status
+
+Accepted.
+
+## Decision
+
+PlantGuard persists four independent state dimensions:
+
+1. Mission Orchestrator owns mission workflow state.
+2. Mission Orchestrator records the current mission activity.
+3. Vehicle Adapter derives vehicle operational state from PX4.
+4. Background Job Worker owns processing-job state.
+
+Processing may run while the aircraft returns or lands. A job retry or checkpoint resume never changes vehicle state and never resumes physical flight.
+
+## Rationale
+
+- represents concurrent flight and processing honestly;
+- prevents queue state from becoming mission authority;
+- supports deterministic recovery and dashboard reconstruction;
+- avoids contradictory single-enum definitions.
+
+## Consequences
+
+- events and persistence schemas carry explicit state-dimension names;
+- workflow transitions, activity changes, vehicle observations, and job transitions are tested separately;
+- flow diagrams may use activity aliases but may not introduce new workflow-state values.
+
+# ADR-032 — Separate Technical Preflight, Operator Approval, and Final Takeoff Authorization
+
+## Status
+
+Accepted.
+
+## Decision
+
+Takeoff uses three ordered gates:
+
+```text
+technical preflight PASS or permitted WARNING
+→ authorized operator approval linked to that snapshot
+→ final takeoff authorization against current telemetry and matching versions
+```
+
+Missing approval is not a technical-preflight failure. It is a takeoff-authorization blocker. Any expired snapshot, version drift, or new safety blocker invalidates readiness and returns the workflow to preparation.
+
+## Rationale
+
+- removes the circular dependency between preflight and approval;
+- preserves explicit human authorization;
+- prevents stale approval from authorizing changed conditions;
+- produces auditable safety evidence.
+
+## Consequences
+
+- approval records reference preflight, route, configuration, actor, and expiry data;
+- the vehicle stays disarmed until final authorization succeeds;
+- duplicate approval or takeoff messages remain idempotent;
+- technical-preflight tests and authorization tests are separate.
+
 ## 4. Cross-Decision Constraints
 
 The following combinations are mandatory:
@@ -1248,6 +1310,16 @@ ADR-013 + ADR-014 + ADR-026
 ```text
 ADR-016 + ADR-023 + ADR-029
 → processing may resume, physical flight uses a new mission
+```
+
+```text
+ADR-009 + ADR-020 + ADR-031
+→ workflow, vehicle, and processing authority remain separate
+```
+
+```text
+ADR-007 + ADR-032
+→ technical readiness, human approval, and final takeoff authorization are distinct gates
 ```
 
 ## 5. Decision Change Control

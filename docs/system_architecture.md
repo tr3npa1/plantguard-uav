@@ -32,20 +32,22 @@ It establishes:
 - quality attributes;
 - intentionally deferred architecture values.
 
-This document does not define individual source files, classes, database tables, API endpoints, or concrete process boundaries. Those details are defined in later Week 2 architecture documents and Week 3 repository design.
+This document does not define individual source files, classes, database tables, API endpoints, or concrete process boundaries. Those details are defined in the supporting architecture documents and repository design.
 
 ## 2. Architectural Scope
 
-PlantGuard UAV v1.0 is a local-first, operator-authorized, autonomous RGB field-inspection system for one predefined agricultural field and one drone at a time.
+PlantGuard UAV v1.0 is a local-first, operator-authorized, autonomous RGB field-inspection system for one predefined agricultural field sector and one drone at a time.
 
 The architecture supports the following product flow:
 
 ```text
 select saved field
-→ run preflight
-→ obtain operator approval
+→ select one field sector and exclusions
+→ run technical preflight
+→ obtain operator approval linked to the current snapshot
+→ validate final takeoff authorization
 → take off
-→ survey the complete field
+→ survey the planned inspectable area
 → capture geotagged RGB imagery
 → validate image quality
 → screen observations as healthy / unhealthy / uncertain
@@ -794,6 +796,7 @@ create mission
 request preflight
 approve takeoff
 pause mission
+resume held mission
 abort mission
 request return-home
 read current status
@@ -915,7 +918,9 @@ Traceability shall be preserved throughout.
 |---|---|
 | Low-level vehicle state | PX4 telemetry |
 | Physical manual input | Manual controller / flight controller |
-| Application mission state | Mission Orchestrator and persistent mission record |
+| Mission workflow state and activity | Mission Orchestrator and persistent mission record |
+| Vehicle operational state | PX4 telemetry normalized by Vehicle Adapter |
+| Processing-job state | Background Job Worker and durable queue record |
 | Application safety decision | Safety Supervisor decision record |
 | Raw image evidence | Mission artifact storage |
 | Structured mission entities | Persistence Layer |
@@ -1229,7 +1234,7 @@ deployment constraints
 
 ## 23. Architecture Review Questions
 
-Later Week 2 documents shall answer:
+Supporting architecture documents shall answer:
 
 1. Which concrete component owns each responsibility?
 2. Which commands and events connect the components?
@@ -1240,15 +1245,15 @@ Later Week 2 documents shall answer:
 7. How are failures retried or escalated?
 8. How are mission state and artifacts persisted?
 9. How are runtime modes selected?
-10. How are Week 1 requirements traced to components?
+10. How are baseline requirements traced to components?
 
-## 24. Day 1 Frozen Decisions
+## 24. Frozen System-Architecture Decisions
 
-The following are frozen at the end of Week 2 Day 1:
+The following are frozen by this system-architecture baseline:
 
 1. PlantGuard UAV is local-first and offline-capable.
 2. Core v1.0 is ground-station-first.
-3. Companion-computer deployment is optional.
+3. Companion-computer deployment is conditional on the same-flight transfer, inference, revisit-decision, and energy gate; the ground path remains preferred when it passes.
 4. PX4 owns low-level flight control and native failsafes.
 5. PlantGuard owns application mission policy and application safety checks.
 6. Manual control remains independent of the dashboard.
@@ -1266,10 +1271,12 @@ The following are frozen at the end of Week 2 Day 1:
 18. Data processing may resume from checkpoints.
 19. Physical flight may not resume automatically.
 20. TensorRT, native C++, and companion deployment fit behind stable interfaces.
+21. Workflow, mission activity, vehicle state, and processing-job state are separate dimensions.
+22. Technical preflight, operator approval, and final takeoff authorization are separate gates.
 
-## 25. Day 1 Acceptance Criteria
+## 25. System-Architecture Acceptance Criteria
 
-Day 1 is complete when:
+The system-architecture baseline is complete when:
 
 - the system boundary is explicit;
 - external actors are explicit;

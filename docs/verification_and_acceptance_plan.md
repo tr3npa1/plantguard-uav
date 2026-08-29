@@ -24,7 +24,7 @@ It establishes:
 - what counts as a resolved suspicious site;
 - what evidence is required before a model result is accepted;
 - which features are mandatory for v1.0;
-- which features are planned as portfolio extensions;
+- which features are deferred beyond v1.0;
 - which features remain outside project scope;
 - the release gates that must pass before tagging v1.0;
 - the evaluation artifacts that must exist in the repository.
@@ -167,7 +167,7 @@ A user completes the normal workflow without terminal access or developer interv
 A mission is `completed` when:
 
 - operator authorization was recorded;
-- preflight passed;
+- technical preflight passed and final takeoff authorization was valid;
 - the planned survey was completed;
 - required imagery was captured;
 - required analysis completed;
@@ -261,7 +261,7 @@ A revisit is successful when:
 7. the revisit evidence was saved;
 8. the drone continued safely or returned home.
 
-A revisit may still produce:
+A revisit may still produce explicit outcomes including:
 
 ```text
 healthy_after_suspicious_survey
@@ -270,37 +270,41 @@ unhealthy_disease_uncertain
 manual_inspection_recommended
 ```
 
-All are valid resolved outcomes when they are evidence-backed.
+All are valid reportable outcomes when they are evidence-backed, but they are not equivalent for resolution metrics.
 
 ## 8. Resolved Site Definition
 
-A suspicious site counts as resolved when it receives one of:
+A suspicious site counts as automatically resolved only when it receives one of:
 
 ```text
 healthy_after_suspicious_survey
 unhealthy_disease_identified
-unhealthy_disease_uncertain
-manual_inspection_recommended
 ```
 
-A site remains unresolved when:
+A site remains unresolved or requires manual action when it receives:
 
 ```text
+unhealthy_disease_uncertain
+health_status_unresolved
+manual_inspection_recommended
 revisit_not_completed
-revisit_capture_failed
 health_status_unresolved_due_to_system_failure
 missing_final_result
 ```
 
+`revisit_capture_failed` is recorded as a reason code for `revisit_not_completed`, not as another final status.
+
 The site-resolution rate is:
 
 ```text
-resolved suspicious sites
+automatically resolved suspicious sites
 ÷
-total suspicious sites
+eligible suspicious sites
 ×
 100
 ```
+
+Manual-action rate and revisit-not-completed rate are reported separately. No release metric may count `manual_inspection_recommended` as an automatically resolved site.
 
 ## 9. Flight Metrics
 
@@ -328,6 +332,7 @@ Before v1.0:
 | Missions on different days or conditions | 3 | 5 | 8+ |
 | Safe return or controlled landing | 100% | 100% | 100% |
 | Unrecovered safety-critical failure | 0 | 0 | 0 |
+| End-to-end completion rate across registered eligible attempts | 90% | 95% | 100% |
 
 A mission may count toward the release gate only when:
 
@@ -336,12 +341,14 @@ A mission may count toward the release gate only when:
 - the outcome is independently reviewable;
 - any warnings are documented.
 
+The acceptance campaign register is created before the first release-candidate flight. Every eligible attempt after takeoff is included in the denominator, including aborted, failed, or incomplete attempts; results may not be cherry-picked. A test invalidated before takeoff by an external condition is retained in the register with its exclusion reason. Any repeated system-caused failure blocks release until corrected and successfully retested.
+
 ## 10. Field Coverage Metrics
 
 The system shall measure:
 
 ```text
-planned field area
+planned inspectable area
 usable observed area
 coverage gaps
 duplicate coverage
@@ -353,7 +360,7 @@ Coverage percentage is defined as:
 ```text
 usable observed area
 ÷
-planned field area
+planned inspectable area
 ×
 100
 ```
@@ -366,6 +373,8 @@ Provisional targets:
 | Unexplained coverage gaps | <10% | <5% | <2% |
 
 Flight-path overlap without usable imagery shall not count as visual coverage.
+
+The planned inspectable area is one saved field-sector boundary minus approved exclusions and safety-rejected geometry. Excluded and skipped regions are never counted as covered and remain visible in release evidence. Automatic multi-flight stitching is outside v1.0.
 
 ## 11. Image-Capture Metrics
 
@@ -622,6 +631,7 @@ The farmer shall be able to:
 - see mission progress;
 - see battery and warnings;
 - pause the mission;
+- explicitly resume a safely held mission when revalidation permits;
 - abort the mission;
 - command return-home;
 - see field coverage;
@@ -652,6 +662,8 @@ database access
 The following behaviors shall be demonstrated in simulation, integration tests, or controlled real tests where appropriate:
 
 - takeoff blocked without operator approval;
+- technical preflight result remains independent of missing approval;
+- stale approval or changed preflight inputs invalidate final takeoff authorization;
 - takeoff blocked with invalid field boundary;
 - takeoff blocked with invalid home position;
 - takeoff blocked with insufficient battery;
@@ -670,6 +682,8 @@ The following behaviors shall be demonstrated in simulation, integration tests, 
 - telemetry loss follows native failsafe policy;
 - interrupted flight does not restart automatically;
 - recovery mission requires new preflight and approval;
+- pause converts to hold only when safe and resume requires explicit revalidation;
+- resume is rejected after restart, manual takeover, or loss of authoritative context;
 - partial data survives mission interruption.
 
 ## 20. Failure-Injection Verification
@@ -690,7 +704,7 @@ low battery
 invalid route
 invalid revisit waypoint
 wind threshold exceeded
-visibility degradation
+dry-daylight envelope violation
 operator abort
 manual takeover
 ```
@@ -792,11 +806,12 @@ A site may be marked `manual_inspection_recommended` when:
 The following are mandatory for PlantGuard UAV v1.0:
 
 ```text
-saved field selection
+saved field-sector selection
 operator-approved takeoff
-preflight validation
+technical preflight and final takeoff authorization
 one-drone mission control
-full-field survey
+planned-inspectable-area survey
+approved exclusion zones and skipped-area reporting
 geotagged RGB image capture
 image-quality validation
 healthy/unhealthy/uncertain screening
@@ -811,6 +826,7 @@ return-home
 landing
 manual takeover
 pause
+explicit safe resume
 abort
 failure logging
 partial-data preservation
@@ -823,11 +839,14 @@ farmer dashboard
 final mission report
 evaluation evidence
 failure-case documentation
+one configured crop or crop family
+limited validated disease taxonomy
+dry daylight operation
 ```
 
-## 25. Planned Portfolio Extensions
+## 25. Deferred Post-v1 Capabilities
 
-The following extensions are planned as part of the overall project portfolio, but they shall not block the core PlantGuard UAV v1.0 release unless explicitly promoted to mandatory scope later.
+The following capabilities are deferred beyond the core PlantGuard UAV v1.0 release unless they are explicitly promoted through product change control.
 
 ### 25.1 TensorRT Optimization
 
@@ -855,9 +874,9 @@ Planned work may include:
 - native build with CMake;
 - automated tests.
 
-### 25.3 Companion-Computer Deployment
+### 25.3 Conditionally Promoted Companion-Computer Deployment
 
-Planned work may include:
+Companion deployment remains deferred when the ground-station path passes the same-flight transfer, inference, revisit-decision, and energy gate. If the ground path fails, release is blocked until a companion path is formally promoted and qualified. Qualification work includes:
 
 - onboard lightweight health screening;
 - local mission-state synchronization;
@@ -895,9 +914,20 @@ Planned work may include:
 - season-level summaries;
 - export for agronomic review.
 
-### 25.6 Extension Acceptance Rule
+### 25.6 Route and Operating-Envelope Expansion
 
-Portfolio extensions must:
+The following remain deferred unless promoted through change control with their own safety and field evidence:
+
+- priority-zone route customization;
+- guided route customization;
+- custom route drafts;
+- automatic multi-flight stitching;
+- additional production crop taxonomies;
+- fog, mist, rain, precipitation, or degraded-visibility operation.
+
+### 25.7 Extension Acceptance Rule
+
+Deferred post-v1 capabilities must:
 
 - remain modular;
 - have their own acceptance criteria;
@@ -909,7 +939,7 @@ Portfolio extensions must:
 
 ## 26. Explicitly Excluded Features
 
-The following remain outside PlantGuard UAV v1.0 and are not planned portfolio requirements:
+The following remain outside PlantGuard UAV v1.0 and are not included in the post-v1 product roadmap:
 
 ```text
 cloud synchronization
@@ -936,7 +966,7 @@ guaranteed diagnosis of all PlantGuard classes from high altitude
 autonomous treatment actions
 ```
 
-Cloud synchronization is explicitly excluded from the planned portfolio extensions.
+Cloud synchronization is explicitly excluded from the deferred post-v1 capabilities.
 
 ## 27. Required Repository Evaluation Artifacts
 
@@ -986,7 +1016,7 @@ Example:
 
 | Requirement | Verification | Evidence |
 |---|---|---|
-| Operator approval required | Integration test | Preflight test log |
+| Operator approval required | Integration test | Linked preflight, approval, and final-authorization log |
 | Invalid revisit waypoint rejected | Unit/integration test | Route validation report |
 | Screening failure disables revisit | Failure injection | Mission event log |
 | Disease prediction traceable | Data integrity test | Final-site record |
@@ -1002,8 +1032,10 @@ The complete one-button workflow functions end to end:
 
 ```text
 select field
-→ preflight
+→ select field sector and exclusions
+→ technical preflight
 → approve takeoff
+→ final takeoff authorization
 → survey
 → screen
 → group sites
@@ -1016,11 +1048,11 @@ select field
 
 ### 29.2 Safety Gate
 
-All mandatory preflight, abort, return-home, manual-takeover, geofence, battery, and failure policies have been demonstrated.
+All mandatory technical-preflight, final-authorization, pause/resume, abort, return-home, manual-takeover, geofence, battery, dry-daylight-envelope, and failure policies have been demonstrated.
 
 ### 29.3 Flight Gate
 
-At least five successful real end-to-end missions have been completed.
+At least five successful real end-to-end missions have been completed across at least three days within the qualified production envelope. Every eligible release-candidate attempt is registered before flight and included in the completion-rate denominator.
 
 ### 29.4 Perception Gate
 
@@ -1028,7 +1060,7 @@ The screening and disease-classification models meet the final approved threshol
 
 ### 29.5 Geospatial Gate
 
-Suspicious sites can be mapped and revisited within the final approved error range.
+Suspicious sites can be mapped and revisited within the final approved error range using the frozen CRS, axis-order, altitude-reference, coordinate-frame, and time-synchronization contracts.
 
 ### 29.6 Reliability Gate
 
@@ -1039,6 +1071,7 @@ The system demonstrates:
 - processing recovery;
 - explicit failure states;
 - preserved partial missions.
+- separate and reconstructable workflow, mission-activity, vehicle, and processing-job states.
 
 ### 29.7 Usability Gate
 
@@ -1057,11 +1090,11 @@ The repository contains:
 - failure-case report;
 - benchmark report;
 - limitations;
-- demo instructions.
+- deployment and operations runbook.
 
-### 29.9 Portfolio Extension Gate
+### 29.9 Post-v1 Capability Gate
 
-Portfolio extensions are not required for the core v1.0 tag.
+Deferred post-v1 capabilities are not required for the core v1.0 tag.
 
 They may receive separate tags or milestone releases after core v1.0.
 
@@ -1070,10 +1103,10 @@ They may receive separate tags or milestone releases after core v1.0.
 PlantGuard UAV v1.0 is complete only when:
 
 - a saved field can be selected;
-- preflight validates the mission;
+- technical preflight validates the mission independently of approval;
 - unsafe starts are blocked;
-- operator approval is required;
-- one drone surveys the complete field;
+- operator approval and final takeoff authorization are required;
+- one drone surveys the planned inspectable area of one field sector;
 - usable geotagged RGB images are captured;
 - image quality is evaluated;
 - healthy, unhealthy, and uncertain screening works;
@@ -1089,6 +1122,7 @@ PlantGuard UAV v1.0 is complete only when:
 - the aircraft returns or lands safely;
 - the farmer receives a field map and report;
 - manual takeover, abort, pause, and return-home work;
+- an explicitly requested resume works only from a safe confirmed hold after current revalidation;
 - major failure scenarios have been tested;
 - partial mission data survives interruption;
 - processing resumes from checkpoints;
@@ -1097,10 +1131,11 @@ PlantGuard UAV v1.0 is complete only when:
 - model limitations are documented;
 - failure cases are documented;
 - the repository contains reproducible setup and evidence.
+- the selected ground or qualified companion topology passes the same-flight transfer, inference, revisit-decision, and energy gate.
 
-## 31. Day 5 Acceptance Criteria
+## 31. Verification-Baseline Acceptance Criteria
 
-Day 5 is complete when:
+The verification baseline is complete when:
 
 - metric categories are defined;
 - minimum, target, and stretch levels are adopted;
@@ -1118,7 +1153,7 @@ Day 5 is complete when:
 - failure-injection coverage is defined;
 - release gates are explicit;
 - mandatory v1.0 features are frozen;
-- portfolio extensions are recorded;
+- deferred post-v1 capabilities are recorded;
 - cloud synchronization is explicitly excluded;
 - required repository evidence is identified;
 - the final definition of done is measurable.
@@ -1130,7 +1165,7 @@ PlantGuard UAV v1.0 shall be accepted only when the system demonstrates safe, re
 The release must prove that it can:
 
 ```text
-survey a complete field
+survey the planned inspectable area of one field sector
 capture usable evidence
 detect suspicious crop regions
 revisit them safely
@@ -1140,6 +1175,6 @@ return safely
 and present actionable inspection results to the farmer
 ```
 
-TensorRT optimization, native C++ inference, companion-computer deployment, a mobile frontend, and historical field analytics are planned portfolio extensions.
+TensorRT optimization, native C++ inference, companion-computer deployment, a mobile frontend, and historical field analytics are deferred post-v1 capabilities.
 
 Cloud synchronization is not part of the planned project scope.

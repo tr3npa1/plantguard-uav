@@ -1,0 +1,9 @@
+environment: development
+log_level: INFO
+log_format: console
+api:
+  host: "127.0.0.1"
+  port: 8000
+database:
+  url: "sqlite+aiosqlite:///./data/plantguard-uav.sqlite3"
+  connect_timeout_seconds: 5

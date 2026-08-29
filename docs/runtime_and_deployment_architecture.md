@@ -600,12 +600,15 @@ logs and metrics
 - images and results retained locally;
 - manual controller independent;
 - PX4 handles immediate link-loss behavior.
+- qualified image transfer, inference, and revisit decision complete inside the validated same-flight energy budget.
 
-## 7.3 Optional Companion-Computer Mode
+## 7.3 Conditionally Promoted Companion-Computer Mode
 
 ### Purpose
 
-Reduce communication and processing latency or improve offline buffering.
+Reduce communication and processing latency or improve offline buffering when the ground-station path cannot pass the mandatory same-flight feasibility gate.
+
+Companion mode is promoted into the production deployment only through controlled hardware qualification, inference-parity testing, failure analysis, security review, and field acceptance. If neither topology passes the gate, release is blocked.
 
 ### Allowed Companion Responsibilities
 
@@ -661,7 +664,7 @@ During temporary disconnection:
 
 ### Purpose
 
-Enable early field testing or low-bandwidth operation.
+Enable early field testing, recovery, reprocessing, or low-bandwidth data collection.
 
 ### Flow
 
@@ -682,6 +685,8 @@ flight captures imagery
 Because processing occurs after landing, suspicious sites cannot be revisited during the same flight.
 
 Any follow-up requires a new mission, preflight, and operator approval.
+
+Post-flight mode does not satisfy the production v1.0 same-flight revisit requirement and cannot be used to pass the product release gate.
 
 ## 7.5 Future Optimized TensorRT / Native C++ Mode
 
@@ -825,8 +830,9 @@ Local radio/network connection only.
 
 | Data | Authoritative location |
 |---|---|
-| PX4 flight state | PX4 telemetry / flight controller |
-| Application mission state | Ground-station relational database |
+| Vehicle operational state | PX4 telemetry / flight controller, normalized by the Vehicle Adapter |
+| Mission workflow state and current activity | Ground-station relational database, owned by the Mission Orchestrator |
+| Processing-job state | Ground-station relational database, owned by the responsible worker |
 | Safety decisions | Ground-station relational database and event log |
 | Raw images | Mission artifact storage |
 | Image manifests | Artifact storage plus structured references |
@@ -892,9 +898,9 @@ The queue technology is deferred, but it must support:
 
 ## 11.2 Queue Is Not Mission State
 
-Queue state cannot replace authoritative mission state.
+Queue state cannot replace authoritative workflow or processing-job state.
 
-The Mission Orchestrator decides which workflow stage is active.
+The Mission Orchestrator owns mission workflow state and current activity, the Vehicle Adapter derives vehicle operational state from PX4, and each worker owns its processing-job state.
 
 ## 11.3 Worker Concurrency
 
@@ -1146,7 +1152,7 @@ Examples:
 
 Process readiness does not equal mission preflight PASS.
 
-Mission preflight evaluates:
+Technical preflight evaluates:
 
 - field;
 - route;
@@ -1156,8 +1162,10 @@ Mission preflight evaluates:
 - GPS;
 - storage;
 - models;
-- weather;
-- operator approval.
+- the dry-daylight production environment;
+- operator supervision and manual-control readiness.
+
+Operator approval is evaluated after technical preflight and is linked to that snapshot. Final takeoff authorization revalidates current telemetry and matching route/configuration versions immediately before arming.
 
 ## 18. Resource Ownership
 
@@ -1608,7 +1616,7 @@ exact artifact-retention duration
 
 These must be resolved later through simulation, hardware selection, performance testing, and security review.
 
-## 27. Day 4 Frozen Decisions
+## 27. Frozen Runtime Decisions
 
 1. Ground-station-first is the canonical v1.0 deployment.
 2. Logical components do not automatically become network services.
@@ -1620,18 +1628,18 @@ These must be resolved later through simulation, hardware selection, performance
 8. Large mission artifacts belong in local mission artifact storage.
 9. The dashboard has no direct database, worker, model, or vehicle access.
 10. The worker has no vehicle-command capability.
-11. The companion computer is optional.
+11. The companion computer is conditional: unnecessary when the ground path passes the same-flight gate, but formally promoted when required to pass it.
 12. The companion may buffer, capture, validate, and infer, but does not replace PX4 safety.
 13. The ground-station mission record remains authoritative in v1.0-compatible companion mode.
 14. Companion synchronization is local-only and duplicate-safe.
 15. Cloud dependency and cloud synchronization are excluded.
-16. Post-flight processing is a supported runtime mode.
+16. Post-flight processing is a supported recovery and validation mode, not a substitute for same-flight revisit release behavior.
 17. Post-flight revisit requires a new mission.
 18. ONNX Runtime is the portable baseline.
 19. TensorRT and native C++ are compatible optimization modes.
 20. Model runtimes may be isolated in subprocesses.
 21. Long-running work uses a local durable queue abstraction.
-22. Queue state does not replace mission state.
+22. Queue state does not replace authoritative workflow or processing-job state.
 23. Startup never auto-resumes physical flight.
 24. Shutdown preserves checkpoints, events, transactions, and artifacts.
 25. Process readiness is separate from mission preflight.
@@ -1641,9 +1649,9 @@ These must be resolved later through simulation, hardware selection, performance
 29. Manual control remains independent.
 30. Kubernetes or distributed cloud orchestration is unnecessary for v1.0.
 
-## 28. Day 4 Acceptance Criteria
+## 28. Runtime-Architecture Acceptance Criteria
 
-Day 4 is complete when:
+The runtime-architecture baseline is complete when:
 
 - every logical component has an allowed runtime location;
 - runtime modes are defined;
@@ -1660,7 +1668,7 @@ Day 4 is complete when:
 - failure domains and degraded behavior are explicit;
 - no safety-critical behavior depends on the dashboard, AI, or cloud;
 - physical flight cannot automatically resume;
-- the architecture is ready for Day 5 mission-sequence flows.
+- the architecture is ready for mission-sequence definition and review.
 
 ## 29. Final Runtime Statement
 

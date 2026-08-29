@@ -66,6 +66,7 @@ The operator must always retain access to:
 
 ```text
 Pause Mission
+Resume Mission
 Abort Mission
 Return Home
 Manual Takeover
@@ -146,7 +147,6 @@ The mission may proceed only after the condition is shown clearly to the operato
 Examples:
 
 ```text
-Degraded-visibility mode active
 Battery below preferred level but still safely sufficient
 Reduced storage margin
 Optional subsystem unavailable
@@ -164,7 +164,6 @@ Examples:
 
 ```text
 No valid home position
-No operator approval
 Insufficient battery for mission and safe return
 Route intersects exclusion zone
 Flight controller unhealthy
@@ -172,25 +171,23 @@ Manual takeover unavailable
 Selected hardware not approved for current weather
 ```
 
-## 5. Mandatory Preflight Checks
+## 5. Mandatory Technical-Preflight Checks
 
 ### 5.1 Operator and Control Checks
 
 The system shall verify:
 
 - operator is present;
-- operator explicitly approves takeoff;
 - manual controller or equivalent manual-control mechanism is available;
 - abort control is available;
 - return-to-home control is available;
 - takeoff area is clear;
 - operator confirms people, vehicles, and livestock are clear of the launch area;
-- operator confirms the selected weather mode matches actual conditions.
+- operator confirms actual conditions match the dry-daylight production envelope.
 
 The following are hard blockers:
 
 ```text
-operator approval missing
 manual takeover unavailable
 return-to-home unavailable
 abort control unavailable
@@ -370,18 +367,15 @@ A future explicitly selected `survey_only` mode may use different requirements, 
 
 ### 5.8 Weather and Visibility Checks
 
-The configured operating mode shall be one of:
+The configured production operating mode shall be:
 
 ```text
-nominal
-degraded_visibility
-light_precipitation
+nominal_dry_daylight
 ```
 
 The system shall verify:
 
-- actual conditions match the selected mode;
-- complete platform is approved for the conditions;
+- actual conditions match the dry-daylight production envelope;
 - wind remains inside configured limit;
 - visual line of sight can be maintained;
 - image-quality test passes;
@@ -392,19 +386,19 @@ The system shall verify:
 The following are hard blockers:
 
 ```text
-rain with non-weather-rated hardware
-precipitation above approved hardware limit
-fog prevents required visual line of sight
+rain or precipitation detected
+fog or mist detected
+inadequate daylight or visibility
 wind exceeds configured limit
 image-quality test repeatedly fails
 operator judges conditions unsafe
 ```
 
-Lowering altitude shall not override a hard weather or visibility blocker.
+Changing altitude, speed, or route length shall not override a hard weather or visibility blocker.
 
 ## 6. Preflight Decision Contract
 
-Preflight shall produce:
+Technical preflight shall produce:
 
 ```json
 {
@@ -424,12 +418,16 @@ Preflight shall produce:
 }
 ```
 
+Technical-preflight PASS or permitted WARNING moves the workflow to `awaiting_operator_approval`; missing approval does not change the technical-preflight result.
+
 The system may arm only when:
 
 ```text
 all hard checks pass
 +
-operator approval is recorded
+operator approval references the current non-expired preflight snapshot
++
+final takeoff validation finds no new blocker
 ```
 
 ## 7. Battery Runtime Policy
@@ -845,7 +843,22 @@ pause mission progression
 → await resume, return-home, abort, or manual takeover
 ```
 
-### 15.2 Abort Mission
+Pause is accepted only when PX4 can enter a confirmed hold and link, geofence, energy, return, landing, reserve, and environmental constraints remain safe. Otherwise it is rejected or converted into return-home or controlled landing.
+
+### 15.2 Resume Mission
+
+Resume requires:
+
+```text
+confirmed hold created by the current mission
++ explicit operator request
++ current safety revalidation
++ unchanged authoritative mission context
+```
+
+Resume is rejected after process restart, manual takeover, loss of authoritative context, or link-loss recovery. Those cases require a new recovery mission, technical preflight, and operator approval. `ResumeMission` never means `ResumeJob`.
+
+### 15.3 Abort Mission
 
 Normal abort means:
 
@@ -857,17 +870,17 @@ cancel remaining survey and revisit work
 
 Abort shall not normally stop motors while airborne.
 
-### 15.3 Return Home
+### 15.4 Return Home
 
 ```text
 cancel remaining autonomous work
 → command return-to-home
-→ transition to returning_home
+→ keep workflow active and set mission activity to return_home
 ```
 
 No survey or revisit work may restart after return-to-home begins.
 
-### 15.4 Manual Takeover
+### 15.5 Manual Takeover
 
 ```text
 operator control immediately supersedes autonomy
@@ -876,7 +889,7 @@ operator control immediately supersedes autonomy
 → data preserved
 ```
 
-### 15.5 Emergency Landing
+### 15.6 Emergency Landing
 
 Emergency landing shall follow the selected aircraft and flight-controller procedures.
 
@@ -1102,7 +1115,9 @@ Each failure event should contain:
   "event_id": "event_000001",
   "mission_id": "mission_000001",
   "timestamp": "ISO-8601 timestamp",
-  "mission_phase": "surveying",
+  "workflow_state": "active",
+  "mission_activity": "survey",
+  "vehicle_state": "in_flight",
   "component": "camera",
   "severity": "return_required",
   "code": "camera_unavailable",
@@ -1118,25 +1133,25 @@ Each failure event should contain:
 
 | Failure | Detection | Severity | System action | State transition | Final reporting |
 |---|---|---|---|---|---|
-| Operator approval missing | Preflight record | Blocked | Remain disarmed | `awaiting_operator_approval` | Show blocker |
-| Low start battery | Battery estimate | Blocked | Remain disarmed | `awaiting_preflight` | Show required reserve |
-| Projected reserve violation | Energy forecast | Return required | Cancel work and return | `returning_home` | Mark incomplete sites |
-| GPS invalid before takeoff | Position health | Blocked | Remain disarmed | `awaiting_preflight` | Show positioning failure |
-| GPS degrades in flight | Position health | Return/emergency | Stop new commands; apply return/failsafe | `returning_home` or `failed` | Preserve last valid state |
+| Operator approval missing | Final takeoff authorization | Blocked | Remain disarmed | `awaiting_operator_approval` | Request authorized approval |
+| Low start battery | Battery estimate | Blocked | Remain disarmed | workflow `preparing`, activity `technical_preflight` | Show required reserve |
+| Projected reserve violation | Energy forecast | Return required | Cancel work and return | workflow `active`, activity `return_home` | Mark incomplete sites |
+| GPS invalid before takeoff | Position health | Blocked | Remain disarmed | workflow `preparing`, activity `technical_preflight` | Show positioning failure |
+| GPS degrades in flight | Position health | Return/emergency | Stop new commands; apply return/failsafe | workflow `active`/`failed`, activity `return_home` | Preserve last valid state |
 | Telemetry loss | Link monitor | Warning/return | Defer to native link-loss policy | Depends on aircraft | Record last known state |
-| Camera unavailable before flight | Camera test | Blocked | Remain disarmed | `awaiting_preflight` | Show camera failure |
-| Camera fails during survey | Capture monitor | Return required | Preserve images; disable revisit; return | `returning_home` | Mark survey incomplete |
-| One revisit capture fails | Capture retry policy | Degraded | Mark site failed; continue | `revisiting` | Manual inspection for site |
-| Screening process fails | Worker/model health | Degraded | Continue safe capture; disable auto revisit | `surveying` | Analysis pending/failed |
-| Disease classifier fails | Worker/model health | Degraded | Preserve revisit images; classify later | `revisiting` | Classification pending |
+| Camera unavailable before flight | Camera test | Blocked | Remain disarmed | workflow `preparing`, activity `technical_preflight` | Show camera failure |
+| Camera fails during survey | Capture monitor | Return required | Preserve images; disable revisit; return | workflow `active`, activity `return_home` | Mark survey incomplete |
+| One revisit capture fails | Capture retry policy | Degraded | Mark site failed; continue | workflow `active`, activity `revisit` | Manual inspection for site |
+| Screening process fails | Worker/model health | Degraded | Continue safe capture; disable auto revisit | workflow `active`, activity `survey` | Analysis pending/failed |
+| Disease classifier fails | Worker/model health | Degraded | Preserve revisit images; classify later | workflow `active`, activity `revisit` | Classification pending |
 | Dashboard crashes | Service health | Warning | Retain flight safety and controller access | No forced change | Log UI outage |
-| Mission orchestrator crashes | Process health | Return required | Stop new commands; use native safety behavior | `returning_home`/`failed` | Preserve checkpoint |
+| Mission orchestrator crashes | Process health | Return required | Stop new commands; use native safety behavior | workflow `failed`; vehicle uses native return/landing behavior | Preserve checkpoint |
 | Database unavailable | Persistence health | Degraded/return | Use local queue or return | Depends on durability | Record storage failure |
-| Wind rises above limit | Weather monitor | Return required | Cancel and return | `returning_home` | Mark weather return |
-| Fog removes VLOS | Operator/visibility check | Return/emergency | Return or safe landing | `returning_home`/`failed` | Mark visibility failure |
-| Route leaves boundary | Route validator | Blocked | Reject route | `awaiting_preflight` | Show invalid route |
-| Invalid revisit waypoint | Route validator | Degraded | Skip site | `revisit_planning` | Manual inspection |
-| Operator abort | Operator command | Return required | Cancel mission and return | `returning_home` | Mark aborted |
+| Wind rises above limit | Weather monitor | Return required | Cancel and return | workflow `active`, activity `return_home` | Mark weather return |
+| Fog or mist detected | Operator/visibility check | Return/emergency | Return or safe landing | workflow `active`/`failed`, activity `return_home` | Mark environment failure |
+| Route leaves boundary | Route validator | Blocked | Reject route | workflow `preparing`, activity `configuration` | Show invalid route |
+| Invalid revisit waypoint | Route validator | Degraded | Skip site | workflow `active`, activity `same_flight_decision` | Manual inspection |
+| Operator abort | Operator command | Return required | Cancel mission and return | workflow `active`, activity `return_home`, then `aborted` | Mark aborted |
 | Manual takeover | Controller input | Emergency priority | Stop autonomy | `aborted` | Mark manual takeover |
 
 ## 24. Hard Blockers
@@ -1168,7 +1183,6 @@ operator judges conditions unsafe
 Warnings may include:
 
 ```text
-degraded-visibility mode active
 battery below preferred but above safe minimum
 reduced storage margin
 optional service unavailable
@@ -1180,7 +1194,7 @@ A warning must become a blocker or return condition when its configured safe bou
 
 ## 26. Degraded Operation Rules
 
-The system may continue in degraded mode only when:
+The system may continue with a degraded non-environmental subsystem only when:
 
 - flight safety remains valid;
 - operator control remains available;
@@ -1195,10 +1209,11 @@ Examples:
 screening offline but image capture healthy
 one revisit site capture failed
 temporary dashboard outage
-reduced visibility with passing checks
 ```
 
-## 27. Authoritative Day 4 Decisions
+This section does not permit operation outside the dry-daylight environmental envelope.
+
+## 27. Authoritative Safety Decisions
 
 PlantGuard UAV v1.0 freezes the following rules:
 
@@ -1214,12 +1229,12 @@ PlantGuard UAV v1.0 freezes the following rules:
 10. Partial mission data is always preserved.
 11. Data processing may resume from checkpoints.
 12. Physical flight never resumes automatically after interruption.
-13. A continued physical mission requires new preflight and new operator approval.
+13. A continued physical mission after restart or authority loss requires a new recovery mission, technical preflight, and new operator approval.
 14. PlantGuard never disables geofence or native safety systems merely to finish a mission.
-15. Weather or image degradation may trigger conservative adaptation, but persistent failure triggers return-home.
+15. Leaving the dry-daylight production envelope starts return-home or controlled landing; mission adaptation does not authorize continued degraded-weather operation.
 16. Numerical battery, GPS, wind, retry, timeout, and image-quality limits remain hardware-specific versioned configuration.
 
-## 28. Day 4 Acceptance Criteria
+## 28. Safety-Baseline Acceptance Criteria
 
 The safety and failure policy is complete when:
 

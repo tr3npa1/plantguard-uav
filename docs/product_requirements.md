@@ -1,4 +1,3 @@
-````markdown
 # PlantGuard UAV — Product Requirements
 
 ## Document Control
@@ -37,7 +36,7 @@ Detailed flight limits, environmental assumptions, safety rules, and failure-res
 
 PlantGuard UAV is an operator-authorized autonomous RGB field-inspection system.
 
-It is designed to inspect one predefined agricultural field at a time using one programmable drone. The system surveys the full field, captures geotagged imagery, performs an initial healthy-versus-unhealthy screening pass, groups suspicious observations into physical inspection sites, revisits those sites at lower altitude, and attempts disease classification using higher-detail images.
+It is designed to inspect one predefined agricultural field sector at a time using one programmable drone. The system surveys the planned inspectable area, captures geotagged imagery, performs an initial healthy-versus-unhealthy screening pass, groups suspicious observations into physical inspection sites, revisits those sites at lower altitude, and attempts disease classification using higher-detail images.
 
 After the mission, the drone returns home and the farmer receives the results through an application dashboard.
 
@@ -97,12 +96,14 @@ PlantGuard UAV v1.0 assumes:
 
 - one farmer or authorized operator controls the mission;
 - one drone is connected at a time;
-- one predefined field is processed at a time;
-- the field boundary is saved before the mission begins;
+- one predefined field sector is processed at a time;
+- the field boundary, inspectable sector, and approved exclusion zones are saved before the mission begins;
 - the operator explicitly approves every takeoff;
-- the drone surveys the complete saved field;
+- the drone surveys the planned inspectable area of that sector;
 - suspicious or unhealthy sites are revisited for closer inspection;
 - the system uses RGB imagery;
+- the production release is validated for one configured crop or crop family and a limited supported disease taxonomy;
+- missions begin only in dry daylight conditions with adequate visibility and supported wind;
 - treatment recommendations are excluded;
 - uncertain cases are shown honestly instead of forcing a disease prediction.
 
@@ -114,11 +115,11 @@ The intended end-to-end user journey is:
 2. The farmer selects a previously saved field.
 3. The system connects to one supported drone.
 4. The system loads the field boundary and mission configuration.
-5. The system performs preflight checks.
-6. The application displays whether the system is ready.
-7. The farmer approves takeoff.
+5. The system performs technical preflight checks without treating missing approval as a technical failure.
+6. The application displays technical readiness, warnings, and blockers.
+7. The authorized operator approves takeoff against the current valid preflight snapshot.
 8. The drone takes off automatically.
-9. The drone follows an automatically generated survey route covering the full field.
+9. The drone follows an automatically generated survey route covering the planned inspectable area.
 10. The camera captures geotagged RGB images.
 11. The system screens visible crop regions as healthy or unhealthy.
 12. Unhealthy or suspicious observations are grouped into physical inspection sites.
@@ -173,9 +174,13 @@ Start Field Scan
 
 The action must only be enabled when required preflight checks pass.
 
-### 7.4 Survey the Entire Field
+### 7.4 Survey the Planned Inspectable Area
 
-The system must generate and execute a route that covers the complete saved field boundary.
+The system must generate and execute a route for one predefined field sector. The planned inspectable area is the saved sector boundary minus approved exclusion zones and any region rejected by safety validation.
+
+The automatic survey must target the complete planned inspectable area. A mission meets the minimum production coverage gate only when at least 90% of that area has usable inspection coverage; the target is at least 95%. Every skipped or unusable region must remain visible in the map and report.
+
+Automatic multi-flight stitching is not part of v1.0. A field that cannot fit the validated survey, same-flight decision, revisit, return, landing, and reserve envelope must be divided into separately approved sectors and missions.
 
 The survey must:
 
@@ -285,18 +290,22 @@ After the mission, the farmer must be able to review:
 
 - **PR-MISSION-001:** The system shall support one connected drone at a time.
 - **PR-MISSION-002:** The system shall require operator approval before takeoff.
-- **PR-MISSION-003:** The system shall generate a route covering the complete saved field.
+- **PR-MISSION-003:** The system shall generate a route targeting the complete planned inspectable area of one saved field sector.
 - **PR-MISSION-004:** The system shall track mission progress.
 - **PR-MISSION-005:** The system shall support operator-initiated abort and return-to-home actions.
 - **PR-MISSION-006:** The system shall record mission start, end, duration, and completion status.
 - **PR-MISSION-007:** The drone shall return home after the mission or when required by the safety policy.
 - **PR-MISSION-008:** The system shall retain partial mission data when a mission does not complete.
+- **PR-MISSION-009:** The system shall support approved exclusion zones and shall never count excluded regions as inspected.
+- **PR-MISSION-010:** The system shall reject a mission that cannot fit the validated survey, same-flight decision, revisit, return, landing, and battery-reserve envelope.
+- **PR-MISSION-011:** An operator pause request shall enter a confirmed hold only when the Safety Supervisor determines holding is safe.
+- **PR-MISSION-012:** Resuming a held mission shall require explicit operator action and current safety revalidation; restart, manual takeover, or lost authority shall require a new recovery mission.
 
 ### 8.3 Image Capture and Traceability
 
 - **PR-IMAGE-001:** The system shall capture RGB images during the field survey.
 - **PR-IMAGE-002:** Every accepted image shall be associated with a mission identifier.
-- **PR-IMAGE-003:** Every accepted image shall retain capture time and geographic metadata when available.
+- **PR-IMAGE-003:** Every accepted geospatial observation shall retain a UTC capture time, synchronized vehicle pose, coordinate reference, altitude reference, and uncertainty metadata.
 - **PR-IMAGE-004:** The system shall record image-quality status.
 - **PR-IMAGE-005:** The system shall retain the relationship between a cropped region and its source image.
 - **PR-IMAGE-006:** The system shall record failed or missing captures.
@@ -348,6 +357,8 @@ After the mission, the farmer must be able to review:
 - **PR-DASH-010:** The dashboard shall display uncertain or manual-inspection cases.
 - **PR-DASH-011:** The dashboard shall display captured evidence images.
 - **PR-DASH-012:** The dashboard shall display mission summary metrics.
+- **PR-DASH-013:** The dashboard shall provide Pause Mission when the current vehicle mode and safety policy permit it.
+- **PR-DASH-014:** The dashboard shall provide Resume Mission only for a confirmed safe hold and shall display rejection or return-home decisions explicitly.
 
 ### 8.9 Reporting
 
@@ -638,8 +649,10 @@ PlantGuard UAV v1.0 includes:
 - one field at a time;
 - one drone at a time;
 - predefined field boundaries;
+- one predefined field sector per mission;
+- approved exclusion zones;
 - operator-authorized takeoff;
-- automatic full-field survey;
+- automatic survey of the planned inspectable area;
 - RGB image capture;
 - geotagged mission data;
 - healthy/unhealthy screening;
@@ -652,7 +665,9 @@ PlantGuard UAV v1.0 includes:
 - farmer-facing dashboard;
 - field-health map;
 - final mission report;
-- manual takeover, abort, and return-home controls.
+- manual takeover, pause/resume, abort, and return-home controls;
+- one configured crop or crop family with a limited validated disease taxonomy;
+- dry daylight operation with adequate visibility and supported wind.
 
 ### 17.2 Excluded from v1.0
 
@@ -672,6 +687,10 @@ PlantGuard UAV v1.0 excludes:
 - fully unsupervised takeoff without operator approval;
 - support for multiple simultaneous drones;
 - support for multiple simultaneous field missions;
+- automatic multi-flight field stitching;
+- user-defined priority zones, guided routes, and custom route drafts;
+- degraded-visibility, fog, mist, rain, or precipitation operation;
+- multiple production crop taxonomies in the initial release;
 - guaranteed classification of every PlantGuard disease class from high-altitude images;
 - mobile-native application requirements;
 - autonomous treatment actions.
@@ -684,7 +703,7 @@ PlantGuard UAV v1.0 is acceptable from the farmer's perspective when:
 2. One connected drone can be prepared for the mission.
 3. The system clearly reports whether takeoff is allowed.
 4. Takeoff does not occur without farmer approval.
-5. The drone surveys the full saved field automatically.
+5. The drone surveys the planned inspectable area automatically and reports every skipped region.
 6. Mission images are captured and associated with field locations.
 7. The system distinguishes healthy and unhealthy observations.
 8. Unhealthy observations are grouped into suspicious sites.
@@ -706,7 +725,7 @@ PlantGuard UAV v1.0 is complete when all of the following are true:
 - one action starts the authorized workflow;
 - unsafe or incomplete starts are rejected;
 - the farmer approves every takeoff;
-- the drone surveys the complete saved field;
+- the drone surveys at least the minimum accepted usable coverage of the planned inspectable area;
 - geotagged RGB imagery is captured;
 - healthy/unhealthy screening is performed;
 - suspicious observations are grouped into sites;
@@ -772,9 +791,8 @@ requirement
 
 ## 22. Final Product Statement
 
-PlantGuard UAV v1.0 is an operator-authorized autonomous RGB field-inspection system for one predefined agricultural field at a time.
+PlantGuard UAV v1.0 is an operator-authorized autonomous RGB field-inspection system for one predefined agricultural field sector at a time, validated for one configured crop scope and dry daylight operation.
 
-It surveys the complete field, performs healthy-versus-unhealthy screening, groups suspicious observations into physical inspection sites, revisits those sites at lower altitude, captures higher-detail images, attempts disease classification with confidence where image quality is sufficient, returns home, and presents the farmer with a georeferenced field-health map and diagnosis metrics through an application dashboard.
+It surveys the planned inspectable area, reports excluded and unusable regions, performs healthy-versus-unhealthy screening, groups suspicious observations into physical inspection sites, revisits eligible sites at lower altitude, captures higher-detail images, attempts disease classification with confidence where image quality is sufficient, returns home, and presents the farmer with a georeferenced field-health map and diagnosis metrics through an application dashboard.
 
 The system supports inspection and prioritization. It does not provide treatment recommendations or claim guaranteed agronomic diagnosis.
-````

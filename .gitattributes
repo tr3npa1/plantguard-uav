@@ -1,0 +1,17 @@
+* text=auto
+
+*.py text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.mako text eol=lf
+Dockerfile text eol=lf
+.env.example text eol=lf
+.dockerignore text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.gitkeep text eol=lf
+migrations/README text eol=lf
+src/plantguard_uav/py.typed text eol=lf

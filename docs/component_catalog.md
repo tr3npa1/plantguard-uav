@@ -132,46 +132,23 @@ Provide the farmer/operator-facing interface for mission setup, route intent, su
 - operator takeoff approval;
 - live mission status;
 - warnings;
-- pause, abort, and return-home requests;
+- pause, resume, abort, and return-home requests;
 - field map and evidence preview;
 - final report display;
 - route-intent editing;
 - exclusion-zone editing;
-- priority-zone editing;
-- preferred survey-direction input;
-- custom-route draft input where enabled;
 - route preview;
 - incomplete-coverage warnings.
 
-### Route-Intent Modes
+### Route-Intent Mode
 
 ```text
 automatic_coverage
-guided_automatic
-expert_custom
 ```
 
 #### Automatic Coverage
 
-The farmer selects a field and the system generates full-field coverage automatically.
-
-#### Guided Automatic
-
-The farmer may define:
-
-- priority zones;
-- exclusion zones;
-- preferred survey direction;
-- denser coverage areas;
-- permitted altitude, overlap, or speed preferences within configured limits.
-
-The Survey Planner converts these constraints into a candidate route.
-
-#### Expert Custom
-
-An authorized operator may draw a custom route draft.
-
-The route draft is not directly executable. It must be normalized by the Survey Planner and validated by the Safety Supervisor.
+The farmer selects a field sector, confirms automatic coverage, and may define approved exclusion zones. The system generates coverage using versioned route configuration. Priority zones, guided route inputs, and custom route drafts are rejected as deferred capabilities.
 
 ### Required Coverage Warning
 
@@ -233,7 +210,7 @@ Dashboard failure must not remove PX4 safety, manual control, or healthy mission
 
 ### Test Boundary
 
-Use a mocked Mission API and simulate mission states, warnings, route-intent validation, custom-route rejection, and incomplete-coverage warnings.
+Use a mocked Mission API and simulate workflow/activity/vehicle/job state combinations, warnings, route-intent validation, custom-route rejection, and incomplete-coverage warnings.
 
 ### Future Extension Points
 
@@ -318,7 +295,7 @@ Coordinate the complete mission workflow.
 
 ### Responsibilities
 
-- authoritative application mission state;
+- authoritative mission workflow state and mission activity;
 - legal state transitions;
 - workflow progression;
 - preflight coordination;
@@ -339,8 +316,8 @@ Coordinate the complete mission workflow.
 
 ### Owned Data
 
-- mission state;
-- current phase;
+- workflow state;
+- mission activity;
 - workflow checkpoint;
 - active job and route references;
 - final mission outcome.
@@ -543,8 +520,6 @@ Convert field geometry and farmer route intent into a candidate executable surve
 ### Responsibilities
 
 - field and exclusion processing;
-- priority-zone processing;
-- custom-route normalization;
 - grid/lawnmower generation;
 - waypoint and capture-point generation;
 - route direction;
@@ -558,17 +533,10 @@ Convert field geometry and farmer route intent into a candidate executable surve
 
 ```text
 automatic coverage
-priority zones
 exclusion zones
-preferred sweep direction
-higher-density areas
-custom route draft
-permitted altitude/speed/overlap preferences
 ```
 
-### Custom-Route Rule
-
-A custom route draft is operator intent, not an executable command. The planner normalizes it, calculates expected coverage and skipped areas, and produces a candidate route for safety validation.
+Sweep direction, altitude, speed, overlap, and coverage density are versioned system configuration, not farmer-authored v1.0 route intent.
 
 ### Non-Responsibilities
 
@@ -592,9 +560,9 @@ A custom route draft is operator intent, not an executable command. The planner 
 ### Inputs
 
 - field geometry;
-- exclusions/priorities;
-- route mode and intent;
-- altitude/speed/overlap;
+- exclusions;
+- automatic-coverage intent;
+- versioned altitude/speed/overlap configuration;
 - home;
 - camera geometry where available.
 
@@ -619,7 +587,7 @@ Create no executable route, preserve correction details, and keep mission before
 
 ### Test Boundary
 
-Polygons, holes, priority zones, malformed custom routes, coverage calculations, deterministic routes.
+Polygons, holes, exclusion zones, unsupported route-mode rejection, coverage calculations, deterministic routes.
 
 ### Future Extension Points
 
@@ -1714,16 +1682,16 @@ Classifier produces per-image predictions
 → final result is unhealthy_disease_uncertain
 ```
 
-## 28. Day 2 Frozen Decisions
+## 28. Frozen Component Boundaries
 
-1. Mission Orchestrator owns workflow progression.
+1. Mission Orchestrator owns workflow state and mission activity; Vehicle Adapter reports PX4 vehicle state; Worker owns processing-job state.
 2. Safety Supervisor owns application safety decisions.
 3. Vehicle Adapter owns command translation and execution.
 4. Farmer Dashboard owns route-intent editing and preview.
 5. Survey Planner owns candidate survey-route generation.
 6. Revisit Planner owns candidate revisit-route generation.
-7. A farmer-drawn route is a route request, not a direct PX4 command.
-8. Exclusion and priority zones are supported.
+7. V1.0 accepts automatic coverage and exclusion zones only; unsupported customization is rejected.
+8. Exclusion zones are supported and never counted as inspected.
 9. Dashboard warns when exclusions reduce inspected coverage.
 10. Planners propose but do not approve or execute.
 11. Camera Manager owns capture, not interpretation.
@@ -1744,9 +1712,9 @@ Classifier produces per-image predictions
 26. No AI component issues flight commands.
 27. No UI component owns authoritative mission state.
 
-## 29. Day 2 Acceptance Criteria
+## 29. Component-Catalog Acceptance Criteria
 
-Day 2 is complete when:
+The component catalog is complete when:
 
 - every required component is defined;
 - each has one primary purpose;
@@ -1754,7 +1722,7 @@ Day 2 is complete when:
 - data, inputs, outputs, dependencies, failures, tests, and extensions are defined;
 - farmer route intent is supported without bypassing planning or safety;
 - no two components ambiguously own the same responsibility;
-- the catalog is ready for Day 3 interface design.
+- the catalog is ready for interface definition and review.
 
 ## 30. Final Component Statement
 
