@@ -51,6 +51,11 @@ configs/local*.yaml
 /data/processed/*
 !/data/processed/.gitkeep
 
+# Local learning and development notes
+/docs/week_02_review.md
+/docs/reviews/
+/docs/development_progress.md
+
 # Editors and operating-system files
 .idea/
 .vscode/

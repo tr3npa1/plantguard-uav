@@ -1,4 +1,6 @@
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
+from decimal import Decimal
+import json
 
 from pydantic import TypeAdapter, ValidationError
 import pytest
@@ -65,6 +67,37 @@ def test_numeric_timestamp_is_rejected_as_ambiguous(numeric_timestamp: int | flo
         UTC_DATETIME_ADAPTER.validate_python(numeric_timestamp)
 
 
+@pytest.mark.parametrize(
+    "timestamp",
+    ["0", "1755604800", "-1", "1755604800.0", "1e9", "not-a-timestamp", ""],
+)
+def test_timestamp_rejects_numeric_and_malformed_text_in_python_and_json(timestamp: str) -> None:
+    with pytest.raises(ValidationError, match="datetime objects or ISO 8601 strings"):
+        UTC_DATETIME_ADAPTER.validate_python(timestamp)
+    with pytest.raises(ValidationError, match="datetime objects or ISO 8601 strings"):
+        UTC_DATETIME_ADAPTER.validate_json(json.dumps(timestamp))
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [b"2026-08-19T12:00:00Z", b"1755604800", True, False, date(2026, 8, 19), Decimal("0")],
+)
+def test_timestamp_rejects_other_types_instead_of_coercing_them(timestamp: object) -> None:
+    with pytest.raises(ValidationError, match="datetime objects or ISO 8601 strings"):
+        UTC_DATETIME_ADAPTER.validate_python(timestamp)
+
+
+@pytest.mark.parametrize("timestamp", ["2026-08-19T12:00:00Z", "2026-08-19T17:30:00+05:30"])
+def test_aware_iso_text_normalises_to_utc_and_round_trips_as_json(timestamp: str) -> None:
+    validated = UTC_DATETIME_ADAPTER.validate_python(timestamp)
+
+    assert validated == datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
+    assert validated.tzinfo is UTC
+    assert (
+        UTC_DATETIME_ADAPTER.validate_json(UTC_DATETIME_ADAPTER.dump_json(validated)) == validated
+    )
+
+
 def test_contract_defaults_to_schema_version_one_and_serializes_as_json() -> None:
     contract = ExampleContract(
         identifier="mission_01",
@@ -122,3 +155,5 @@ def test_model_copy_revalidates_updates_instead_of_trusting_them() -> None:
     assert updated.label == "revisit"
     with pytest.raises(ValidationError):
         contract.model_copy(update={"schema_version": "2.0"})
+    with pytest.raises(ValidationError, match="datetime objects or ISO 8601 strings"):
+        contract.model_copy(update={"occurred_at": "1755604800"})

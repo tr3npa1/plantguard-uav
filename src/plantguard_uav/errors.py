@@ -1,6 +1,20 @@
 """Application-specific exceptions for PlantGuard UAV."""
 
 from collections.abc import Mapping
+from typing import Literal
+
+type InspectionConfigurationFailureReason = Literal[
+    "invalid_input",
+    "file_unavailable",
+    "not_regular_file",
+    "input_too_large",
+    "invalid_encoding",
+    "invalid_json",
+    "duplicate_key",
+    "nonfinite_number",
+    "invalid_configuration",
+    "identity_mismatch",
+]
 
 
 class PlantGuardError(Exception):
@@ -25,6 +39,33 @@ class ConfigurationError(PlantGuardError):
     """Report that application configuration could not be loaded safely."""
 
     error_code = "configuration_error"
+
+
+class InspectionConfigurationError(ConfigurationError):
+    """Report an inspection-input failure without exposing its contents or path."""
+
+    def __init__(self, *, reason: InspectionConfigurationFailureReason) -> None:
+        """Create a fixed public error with only a controlled failure category."""
+        super().__init__(
+            "Inspection configuration could not be loaded.",
+            context={"operation": "load_inspection_configuration", "reason": reason},
+        )
+
+
+class InspectionConfigurationUnavailableError(ConfigurationError):
+    """Report absent server-side source wiring without exposing deployment details."""
+
+    status_code = 503
+
+    def __init__(self) -> None:
+        """Create a fixed unavailable response with a controlled internal reason."""
+        super().__init__(
+            "Inspection configuration source is not configured.",
+            context={
+                "operation": "load_inspection_configuration",
+                "reason": "source_not_configured",
+            },
+        )
 
 
 class StartupError(PlantGuardError):

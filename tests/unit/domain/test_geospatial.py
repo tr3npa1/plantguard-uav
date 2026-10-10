@@ -154,6 +154,39 @@ def test_polygon_rejects_an_empty_ring_collection(coordinates: object) -> None:
         GeoJsonPolygon(coordinates=coordinates)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    "coordinates",
+    [
+        {tuple(tuple(position) for position in OUTER_RING)},
+        frozenset({tuple(tuple(position) for position in OUTER_RING)}),
+        iter([OUTER_RING, HOLE_RING]),
+        (ring for ring in [OUTER_RING, HOLE_RING]),
+        {"exterior": OUTER_RING},
+        "not-an-array",
+        None,
+    ],
+)
+def test_polygon_rejects_non_array_ring_collections(coordinates: object) -> None:
+    with pytest.raises(ValidationError, match="ordered array of rings"):
+        GeoJsonPolygon.model_validate({"coordinates": coordinates})
+
+
+@pytest.mark.parametrize("coordinates", [[OUTER_RING, HOLE_RING], (OUTER_RING, HOLE_RING)])
+def test_polygon_preserves_exterior_and_hole_order_through_json(coordinates: object) -> None:
+    polygon = GeoJsonPolygon.model_validate({"coordinates": coordinates})
+    restored = GeoJsonPolygon.model_validate_json(polygon.model_dump_json())
+
+    assert restored == polygon
+    assert restored.model_dump(mode="json")["coordinates"] == [OUTER_RING, HOLE_RING]
+
+
+def test_polygon_copy_rejects_unordered_ring_updates() -> None:
+    polygon = GeoJsonPolygon.model_validate({"coordinates": [OUTER_RING, HOLE_RING]})
+
+    with pytest.raises(ValidationError, match="ordered array of rings"):
+        polygon.model_copy(update={"coordinates": set(polygon.coordinates)})
+
+
 def test_geometry_is_frozen_and_model_copy_revalidates_updates() -> None:
     point = GeoJsonPoint.model_validate({"coordinates": [77.209, 28.6139]})
 

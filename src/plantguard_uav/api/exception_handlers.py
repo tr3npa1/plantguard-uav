@@ -4,11 +4,48 @@ from typing import cast
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette import status
 
 from plantguard_uav.errors import PlantGuardError
 from plantguard_uav.logging import get_logger
+
+
+class ApiErrorDetail(BaseModel):
+    """Document the public error fields without exposing internal error context."""
+
+    code: str
+    message: str
+    error_id: str | None = None
+
+
+class ApiErrorResponse(BaseModel):
+    """Describe the shared HTTP error envelope for API documentation."""
+
+    error: ApiErrorDetail
+
+
+async def handle_request_validation_error(request: Request, exc: Exception) -> JSONResponse:
+    """Reject invalid requests without logging or returning submitted values."""
+    get_logger(__name__).warning(
+        "request_validation_failed",
+        method=request.method,
+        path=request.url.path,
+        error_code="validation_error",
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        headers={"Cache-Control": "no-store"},
+        content={
+            "error": {
+                "code": "validation_error",
+                "message": "The request contains invalid or missing values.",
+            }
+        },
+    )
 
 
 async def handle_plantguard_error(request: Request, exc: Exception) -> JSONResponse:
@@ -24,6 +61,7 @@ async def handle_plantguard_error(request: Request, exc: Exception) -> JSONRespo
     )
     return JSONResponse(
         status_code=error.status_code,
+        headers={"Cache-Control": "no-store"},
         content={
             "error": {
                 "code": error.error_code,
@@ -46,6 +84,7 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
     )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        headers={"Cache-Control": "no-store"},
         content={
             "error": {
                 "code": "internal_server_error",
@@ -58,5 +97,6 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Register application-wide known and unexpected exception handlers."""
+    app.add_exception_handler(RequestValidationError, handle_request_validation_error)
     app.add_exception_handler(PlantGuardError, handle_plantguard_error)
     app.add_exception_handler(Exception, handle_unexpected_error)

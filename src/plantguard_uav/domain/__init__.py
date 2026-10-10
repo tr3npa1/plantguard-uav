@@ -13,12 +13,17 @@ from plantguard_uav.domain.enums import (
     SurveyHealthStatus,
     VehicleOperationalState,
 )
-from plantguard_uav.domain.field import SavedFieldDefinition
+from plantguard_uav.domain.field import SavedFieldDefinition, SavedFieldPage, SavedFieldSummary
 from plantguard_uav.domain.geospatial import (
     GeoJsonLinearRing,
     GeoJsonPoint,
     GeoJsonPolygon,
     Wgs84Position,
+)
+from plantguard_uav.domain.inspection_configuration import (
+    InspectionFlightConfiguration,
+    RevisitConfiguration,
+    SurveyConfiguration,
 )
 from plantguard_uav.domain.state import (
     DecisionReason,
@@ -44,6 +49,7 @@ __all__ = [
     "GeoJsonPoint",
     "GeoJsonPolygon",
     "ImageQualityStatus",
+    "InspectionFlightConfiguration",
     "MissionActivity",
     "MissionStateSnapshot",
     "MissionWorkflowState",
@@ -53,10 +59,14 @@ __all__ = [
     "ProcessingJobState",
     "ProcessingJobStateSnapshot",
     "ReasonCode",
+    "RevisitConfiguration",
     "RevisitStatus",
     "SafetySeverity",
     "SavedFieldDefinition",
+    "SavedFieldPage",
+    "SavedFieldSummary",
     "SchemaVersion",
+    "SurveyConfiguration",
     "SurveyHealthStatus",
     "UtcDateTime",
     "VehicleOperationalState",

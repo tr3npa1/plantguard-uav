@@ -87,6 +87,14 @@ type GeoJsonLinearRing = Annotated[
 ]
 
 
+def _validate_polygon_container(value: object) -> object:
+    """Preserve exterior-ring and hole order by accepting only array containers."""
+    if not isinstance(value, (list, tuple)):
+        msg = "A GeoJSON polygon must contain an ordered array of rings."
+        raise ValueError(msg)
+    return value
+
+
 class _GeoJsonModel(BaseModel):
     """Provide strict immutable behavior without adding non-GeoJSON members."""
 
@@ -123,4 +131,7 @@ class GeoJsonPolygon(_GeoJsonModel):
     """Represent a structurally valid WGS 84 GeoJSON Polygon geometry."""
 
     type: Literal["Polygon"] = "Polygon"
-    coordinates: tuple[GeoJsonLinearRing, ...] = Field(min_length=1)
+    coordinates: Annotated[
+        tuple[GeoJsonLinearRing, ...],
+        BeforeValidator(_validate_polygon_container),
+    ] = Field(min_length=1)

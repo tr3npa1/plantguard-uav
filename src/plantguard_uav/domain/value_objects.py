@@ -20,12 +20,17 @@ type NonBlankText = Annotated[
 ]
 
 
-def _reject_numeric_datetime(value: object) -> object:
-    """Reject ambiguous Unix numbers while permitting datetime and ISO string inputs."""
-    if isinstance(value, (int, float)):
-        msg = "Domain timestamps must be datetime objects or ISO 8601 strings."
-        raise ValueError(msg)
-    return value
+def _validate_datetime_input(value: object) -> datetime:
+    """Accept datetime objects or ISO text without implicit Unix-number coercion."""
+    if isinstance(value, datetime):
+        return value
+    msg = "Domain timestamps must be datetime objects or ISO 8601 strings."
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            raise ValueError(msg) from None
+    raise ValueError(msg)
 
 
 def _normalise_utc_datetime(value: datetime) -> datetime:
@@ -38,7 +43,7 @@ def _normalise_utc_datetime(value: datetime) -> datetime:
 
 type UtcDateTime = Annotated[
     datetime,
-    BeforeValidator(_reject_numeric_datetime),
+    BeforeValidator(_validate_datetime_input),
     AfterValidator(_normalise_utc_datetime),
 ]
 

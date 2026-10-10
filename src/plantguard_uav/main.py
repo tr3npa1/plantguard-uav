@@ -8,10 +8,15 @@ from fastapi import FastAPI
 
 from plantguard_uav import __version__
 from plantguard_uav.api.exception_handlers import register_exception_handlers
+from plantguard_uav.api.routes.fields import router as fields_router
 from plantguard_uav.api.routes.health import router as health_router
+from plantguard_uav.api.routes.inspection_configuration import (
+    router as inspection_configuration_router,
+)
 from plantguard_uav.config import Environment, Settings, load_settings
 from plantguard_uav.db import DatabaseRuntime
 from plantguard_uav.logging import configure_logging, get_logger
+from plantguard_uav.repositories.inspection_configuration import InspectionConfigurationSource
 
 
 @asynccontextmanager
@@ -39,6 +44,8 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app(
     settings: Settings | None = None,
     database_runtime: DatabaseRuntime | None = None,
+    *,
+    inspection_configuration_source: InspectionConfigurationSource | None = None,
 ) -> FastAPI:
     """Build a side-effect-controlled application with injected or loaded settings."""
     resolved_settings = settings if settings is not None else load_settings()
@@ -60,7 +67,12 @@ def create_app(
     )
     app.state.settings = resolved_settings
     app.state.database_runtime = resolved_database_runtime
+    app.state.inspection_configuration_source = inspection_configuration_source
     app.state.ready = False
     app.include_router(health_router)
+    # Field and inspection-configuration access require authorization before production exposure.
+    if resolved_settings.environment in {Environment.DEVELOPMENT, Environment.TESTING}:
+        app.include_router(fields_router)
+        app.include_router(inspection_configuration_router)
     register_exception_handlers(app)
     return app
