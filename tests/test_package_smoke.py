@@ -20,7 +20,7 @@ def test_package_exposes_a_version() -> None:
 
 
 def test_field_selection_contracts_are_publicly_importable() -> None:
-    """W1D6 contracts should be reachable through their public package boundaries."""
+    """Field-selection contracts should be reachable through their public package boundaries."""
     from plantguard_uav.domain import (
         GeoJsonLinearRing,
         GeoJsonPoint,

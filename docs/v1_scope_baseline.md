@@ -1104,22 +1104,7 @@ The scope baseline is complete when:
 - no known contradiction remains;
 - the baseline is committed.
 
-## 29. Recommended Commit
-
-```bash
-git add docs/product_requirements.md         docs/system_scope.md         docs/data_and_decision_contracts.md         docs/safety_and_failure_policy.md         docs/verification_and_acceptance_plan.md         docs/v1_scope_baseline.md
-
-git commit -m "Freeze PlantGuard UAV v1.0 product scope"
-```
-
-PowerShell:
-
-```powershell
-git add docs\product_requirements.md docs\system_scope.md docs\data_and_decision_contracts.md docs\safety_and_failure_policy.md docs\verification_and_acceptance_plan.md docs\v1_scope_baseline.md
-git commit -m "Freeze PlantGuard UAV v1.0 product scope"
-```
-
-## 30. Scope-Freeze Declaration
+## 29. Scope-Freeze Declaration
 
 The PlantGuard UAV v1.0 product scope is frozen by this approved baseline.
 
@@ -1138,7 +1123,7 @@ the release gates
 
 Any such change requires formal scope-change review.
 
-## 31. Approved Production-v1 Decisions
+## 30. Approved Production-v1 Decisions
 
 The production baseline additionally freezes these decisions:
 
@@ -1155,7 +1140,7 @@ The production baseline additionally freezes these decisions:
 11. `revisit_capture_failed` is a reason for `revisit_not_completed`, not a final status.
 12. Ground-station-first remains the default topology, but production release is blocked unless the selected topology meets the same-flight image-transfer, inference, revisit-decision, and energy gate. A companion may be formally promoted if required to pass that gate.
 
-## 32. External Readiness Gates
+## 31. External Readiness Gates
 
 Implementation may proceed with adapters and configuration boundaries, but real-flight release remains blocked until all of the following are resolved with evidence:
 

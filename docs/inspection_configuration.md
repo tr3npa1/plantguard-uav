@@ -94,7 +94,7 @@ Loading follows this sequence:
 4. Reject inputs exceeding **64 KiB (65,536 bytes)**. Reading one extra byte distinguishes a file exactly at the limit from a larger one; the earlier file-size metadata is not trusted to bound the read.
 5. Decode UTF-8 and parse JSON, rejecting repeated decoded keys at every object level, including escaped-equivalent keys. Reject NaN, infinity tokens, and numeric literals that overflow to infinity.
 6. Reject non-object roots and strings containing unpaired Unicode surrogate escapes. Malformed JSON, decoder recursion-limit failures, and integer-digit-limit failures become controlled errors.
-7. Call the existing `InspectionFlightConfiguration.model_validate` to enforce all Day 3 rules and return the frozen configuration. Numeric and cross-field rules are not duplicated in the adapter.
+7. Call `InspectionFlightConfiguration.model_validate` to enforce the domain validation rules and return the frozen configuration. Numeric and cross-field rules are not duplicated in the adapter.
 
 The size cap is a technical input-resource limit, not a flight limit. JSON is an implementation choice permitted by the scope baseline. This small survey/revisit input file is **not** the future full `configuration/mission_config.yaml` snapshot described in the data contracts; that snapshot contract is unchanged.
 
@@ -132,7 +132,7 @@ The loader is an explicit local engineering interface, not an arbitrary-path upl
 `src/plantguard_uav/services/inspection_configuration.py` supplies:
 
 - `GetInspectionConfigurationQuery`: required `configuration_id` and `configuration_version`, plus the existing default `schema_version="1.0"`. Identifiers must be nonblank strings; surrounding whitespace is removed. Unknown fields and unsupported schemas are rejected. The query is frozen, copied updates are validated, and existing instances are revalidated using a local setting rather than changing the shared model base.
-- `GetInspectionConfigurationService(source)`: receives its source from the caller instead of choosing a path itself. `execute(query)` revalidates the query before any source access, calls `source.load()` once, revalidates the returned object with the existing Day 3 model, and then compares the ID and revision to the query. Only a matching validated configuration is returned.
+- `GetInspectionConfigurationService(source)`: receives its source from the caller instead of choosing a path itself. `execute(query)` revalidates the query before any source access, calls `source.load()` once, revalidates the returned object with `InspectionFlightConfiguration`, and then compares the ID and revision to the query. Only a matching validated configuration is returned.
 
 The source interface is exported from `plantguard_uav.repositories`; the query and service are exported from `plantguard_uav.services`. A caller supplies `path`, `expected_id`, and `expected_revision` explicitly:
 
@@ -192,7 +192,7 @@ uvicorn.run(app, host="127.0.0.1", port=settings.api.port)
 1. The dependency retrieves the optional source from application state without file I/O or a missing-source exception.
 2. FastAPI validates both query identifiers before executing the route. Missing/blank identifiers receive the existing safe `422` response even when no source is configured.
 3. The synchronous route creates the existing query and checks whether a source was supplied. If absent, it raises `InspectionConfigurationUnavailableError`, a `ConfigurationError` subclass with status `503`, the fixed message `Inspection configuration source is not configured.`, and controlled context reason `source_not_configured`. No retry time is invented.
-4. With a source present, the route invokes the unchanged W2D5 service, which reads fresh contents, revalidates the configuration, and verifies both identifiers.
+4. With a source present, the route invokes `GetInspectionConfigurationService`, which reads fresh contents, revalidates the configuration, and verifies both identifiers.
 5. A successful response is `200` with the validated JSON model. Existing file, parser, domain, and identity-mismatch failures remain safe `500` / `configuration_error` responses. Unexpected faults use the existing generic `500` / `internal_server_error` envelope with an error ID.
 
 The route is declared with normal `def`, so synchronous service/file work executes in FastAPI's worker thread rather than directly in the asynchronous event loop. A supplied source may be called concurrently by different requests; custom source implementations must support independent concurrent reads. The built-in file source retains only its path and opens a separate file handle per load. API construction and startup never load this file. The route opens no database transaction. Process/database readiness checks remain independent of the optional configuration source; passing readiness does not promise this endpoint can load a profile.
